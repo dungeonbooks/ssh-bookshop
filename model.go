@@ -250,7 +250,7 @@ func (m model) View() string {
 	rule := ruleStyle.Render(strings.Repeat("─", cw))
 
 	stack := lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.PlaceHorizontal(cw, lipgloss.Center, m.nav(cw)),
+		lipgloss.PlaceHorizontal(cw, lipgloss.Center, m.nav(cw, twoCol)),
 		"",
 		bodyArea,
 		"",
@@ -258,18 +258,20 @@ func (m model) View() string {
 		rule,
 		m.footer(cw),
 	)
-	// center the whole block; top-align if it's taller than the window
+	// center within height-1 so a row is always reserved at the bottom, matching
+	// terminal.shop (its block never touches the last line); top-align if taller
+	avail := m.height - 1
 	vpos := lipgloss.Center
-	if lipgloss.Height(stack) >= m.height {
+	if lipgloss.Height(stack) >= avail {
 		vpos = lipgloss.Top
 	}
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, vpos, stack)
+	return lipgloss.Place(m.width, avail, lipgloss.Center, vpos, stack)
 }
 
 // nav draws the boxed cell bar. Cells stretch to fill cw so the bar spans the
 // same width as the body below it (terminal.shop's behavior). When too narrow,
 // the logo is dropped, then it collapses to a plain line.
-func (m model) nav(cw int) string {
+func (m model) nav(cw int, twoCol bool) string {
 	type cell struct {
 		hot, label string
 		on, logo   bool
@@ -332,6 +334,25 @@ func (m model) nav(cw int) string {
 	for i := 0; used < cw; i = (i + 1) % n {
 		widths[i]++
 		used++
+	}
+
+	// In two-column mode, size the logo cell so the divider after it lands on the
+	// detail column edge (leftCol): divider sits at col 1+widths[0], align to leftCol.
+	if twoCol && n > 1 && cells[0].logo {
+		delta := widths[0] - (leftCol - 1) // columns to move off the logo cell
+		widths[0] = leftCol - 1
+		for i := 1; delta != 0; i++ {
+			if i >= n {
+				i = 1
+			}
+			if delta > 0 {
+				widths[i]++
+				delta--
+			} else {
+				widths[i]--
+				delta++
+			}
+		}
 	}
 
 	var top, mid, bot strings.Builder
