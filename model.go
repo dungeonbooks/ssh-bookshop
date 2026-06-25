@@ -181,7 +181,9 @@ func (m model) dims() (cw, rightW, bodyH int, twoCol bool) {
 		rightW = cw
 	}
 	bodyH = bodyMax
-	if avail := m.height - chromeH; bodyH > avail {
+	// reserve one blank row at the bottom so the footer never sits on the last
+	// line when compressed (terminal.shop caps its block at height-1)
+	if avail := m.height - chromeH - 1; bodyH > avail {
 		bodyH = avail
 	}
 	if bodyH < 4 {
@@ -290,15 +292,16 @@ func (m model) nav(cw int) string {
 		}
 		return c.hot + " " + c.label
 	}
+	// top bar is all white (no accent); inactive labels are gray
 	styled := func(c cell) string {
 		if c.logo {
-			return logoStyle.Render(c.label)
+			return active.Render(c.label)
 		}
 		st := inactive
 		if c.on {
 			st = active
 		}
-		return hotkey.Render(c.hot) + " " + st.Render(c.label)
+		return active.Render(c.hot) + " " + st.Render(c.label)
 	}
 	fits := func(cells []cell) bool {
 		need := len(cells) + 1 // box bars
@@ -364,7 +367,7 @@ func (m model) navPlain(cw int) string {
 		if on {
 			st = active
 		}
-		return hotkey.Render(hot) + " " + st.Render(label)
+		return active.Render(hot) + " " + st.Render(label)
 	}
 	cartLabel := "cart"
 	if len(m.cart) > 0 {
