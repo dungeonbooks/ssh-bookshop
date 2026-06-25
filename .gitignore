@@ -1,0 +1,10 @@
+# compiled binary
+/ssh-bookshop
+/bookshop
+
+# server-generated SSH host key
+/.ssh/
+
+# go
+*.test
+*.out
