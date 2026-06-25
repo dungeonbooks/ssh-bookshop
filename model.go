@@ -25,7 +25,7 @@ var (
 	active   = lipgloss.NewStyle().Foreground(white).Bold(true)
 	inactive = lipgloss.NewStyle().Foreground(gray)
 
-	secHead = lipgloss.NewStyle().Foreground(gray)
+	secHead = lipgloss.NewStyle().Foreground(dim)
 	// selItem is the single focused element: an accent block, like terminal.shop.
 	selItem = lipgloss.NewStyle().Background(accent).Foreground(black).Bold(true)
 	romItem = lipgloss.NewStyle().Foreground(gray)
@@ -44,13 +44,14 @@ var (
 	ruleStyle  = lipgloss.NewStyle().Foreground(dim)
 )
 
+// Layout constants measured from terminal.shop.
 const (
-	gapW       = 3  // gap between the two columns
-	maxContent = 86 // content column caps here on wide terminals
-	twoColMin  = 70 // below this content width, stack into one column
-	leftCol    = 30 // product/menu column width in two-column mode
-	// chrome rows: nav(3) + blank(1) + blank(1) + promo(1) + rule(1) + footer(1)
-	chromeH = 8
+	maxContent    = 78 // wide content width, centered (terminal.shop)
+	narrowContent = 48 // single-column content width
+	twoColMin     = 80 // two columns at/above this terminal width
+	leftCol       = 20 // product/menu column in two-column mode
+	bodyMax       = 21 // body area height when the window has room to spare
+	chromeH       = 8  // nav(3) + blank + body + blank + promo + rule + footer
 )
 
 type tab int
@@ -157,23 +158,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// dims derives the responsive layout from the current window size.
+// dims derives the responsive layout from the window size, matching
+// terminal.shop: content is 78 cols (two columns) at width >= 80, otherwise 48
+// (single column); both centered. bodyH is the fixed body-area height that pins
+// the footer, shrinking only when the window is too short.
 func (m model) dims() (cw, rightW, bodyH int, twoCol bool) {
-	cw = m.width - 6
-	if cw > maxContent {
-		cw = maxContent
-	}
-	if cw < 20 {
-		cw = 20
-	}
-	twoCol = cw >= twoColMin
-	rightW = cw
+	twoCol = m.width >= twoColMin
 	if twoCol {
-		rightW = cw - leftCol - gapW
+		cw = maxContent
+	} else {
+		cw = narrowContent
 	}
-	bodyH = m.height - chromeH
-	if bodyH < 6 {
-		bodyH = 6
+	if cw > m.width-2 {
+		cw = m.width - 2
+	}
+	if cw < 16 {
+		cw = 16
+	}
+	if twoCol {
+		rightW = cw - leftCol
+	} else {
+		rightW = cw
+	}
+	bodyH = bodyMax
+	if avail := m.height - chromeH; bodyH > avail {
+		bodyH = avail
+	}
+	if bodyH < 4 {
+		bodyH = 4
 	}
 	return
 }
@@ -190,12 +202,11 @@ func (m model) View() string {
 
 	cw, rightW, bodyH, twoCol := m.dims()
 
-	// Content is clamped to bodyH so the whole block always fits the window
-	// (lipgloss does not truncate vertically; overflow would scroll the nav off).
+	// Build the body content, clamped to the fixed body-area height (bodyH).
 	var body string
 	switch {
 	case m.tab == tabCart:
-		body = lipgloss.PlaceHorizontal(cw, lipgloss.Center, clampLines(m.cartView(cw), bodyH))
+		body = clampLines(m.cartView(cw), bodyH)
 
 	case twoCol:
 		var left, right string
@@ -207,7 +218,6 @@ func (m model) View() string {
 		}
 		body = lipgloss.JoinHorizontal(lipgloss.Top,
 			lipgloss.NewStyle().Width(leftCol).Render(clampLines(left, bodyH)),
-			strings.Repeat(" ", gapW),
 			lipgloss.NewStyle().Width(rightW).Render(clampLines(right, bodyH)),
 		)
 
@@ -231,20 +241,22 @@ func (m model) View() string {
 			clampLines(top, listRows), "", clampLines(bottom, detBudget))
 	}
 
+	// fixed-height body area pins the footer at a stable row (terminal.shop)
+	bodyArea := lipgloss.NewStyle().Width(cw).Height(bodyH).Render(clampLines(body, bodyH))
+
 	promo := lipgloss.PlaceHorizontal(cw, lipgloss.Center, promoStyle.Render("every order supports independent bookstores"))
 	rule := ruleStyle.Render(strings.Repeat("─", cw))
 
 	stack := lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.PlaceHorizontal(cw, lipgloss.Center, m.nav(cw)),
 		"",
-		body,
+		bodyArea,
 		"",
 		promo,
 		rule,
 		m.footer(cw),
 	)
-	// center the block horizontally; center vertically unless it's taller than
-	// the window, in which case top-align so the nav isn't clipped off-screen
+	// center the whole block; top-align if it's taller than the window
 	vpos := lipgloss.Center
 	if lipgloss.Height(stack) >= m.height {
 		vpos = lipgloss.Top
@@ -384,22 +396,22 @@ func (m model) productList(maxRows int) string {
 		text    string
 		bookIdx int
 	}
-	colW := leftCol
+	maxw := leftCol - 3 // 1 leading space + 2-col gutter before the detail column
 	rows := []row{}
 	lastColl := ""
 	for i, b := range catalog {
 		if b.Collection != lastColl {
-			rows = append(rows, row{text: secHead.Render("~ " + strings.ToLower(b.Collection) + " ~"), bookIdx: -1})
+			rows = append(rows, row{text: " " + secHead.Render("~ "+strings.ToLower(b.Collection)+" ~"), bookIdx: -1})
 			lastColl = b.Collection
 		}
 		name := b.BookTitle
-		if w := colW - 2; lipgloss.Width(name) > w {
-			name = name[:w-1] + "…"
+		if lipgloss.Width(name) > maxw {
+			name = name[:maxw-1] + "…"
 		}
 		if i == m.cursor {
-			rows = append(rows, row{text: selItem.Render("› " + name), bookIdx: i})
+			rows = append(rows, row{text: selItem.Render(" " + name), bookIdx: i})
 		} else {
-			rows = append(rows, row{text: romItem.Render("  " + name), bookIdx: i})
+			rows = append(rows, row{text: romItem.Render(" " + name), bookIdx: i})
 		}
 	}
 
