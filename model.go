@@ -678,14 +678,15 @@ func (m model) action(w int, b Book) string {
 	// available action does. Its background starts flush with the title and
 	// description above, so the accent block lines up with the column.
 	chip := lipgloss.NewStyle().Background(accent).Foreground(ink)
-	tip := dValue.Render("enter") + dBody.Render(" to copy")
+	// The shop name carries the link rather than printing the affiliate URL,
+	// which is long and ugly on a book page. Two ways to reach it: click it
+	// (OSC 8) or press enter to copy it (OSC 52).
+	tip := dValue.Render("enter") + dBody.Render(" to buy on ") +
+		hyperlink(b.BuyURL(), dLink.Render("bookshop.org"))
 	if m.copied {
 		tip = dBody.Render("link copied to clipboard")
 	}
-	// The URL is printed, not just copied: OSC 52 is not universal, and a
-	// terminal without it would otherwise leave no way to reach the link.
-	return chip.Render(" sold out ") + "  " + tip + "\n" +
-		hyperlink(b.BuyURL(), dLink.Render(truncate(b.BuyURL(), w)))
+	return chip.Render(" sold out ") + "  " + tip
 }
 
 // breadcrumb is the checkout step indicator: only the current step is bright,
