@@ -272,6 +272,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case checkoutMsg:
+		// Apply whatever Square just told us, so the shelf stops lying and a
+		// retry has a chance of succeeding.
+		for i := range catalog {
+			if f, ok := msg.fresh[catalog[i].VariationID]; ok {
+				catalog[i].Cents, catalog[i].Stock = f.cents, f.stock
+				catalog[i].Tracked, catalog[i].Sellable = !f.untracked, f.sellable
+			}
+		}
 		if msg.err != nil {
 			m.checkoutErr = msg.err
 			return m, nil
@@ -649,7 +657,7 @@ func (m model) detailView(w int) string {
 	// it is not struck through: that would read as a discount. The status says
 	// plainly that the shelf is empty.
 	if p := b.Price(); p > 0 {
-		fmt.Fprintln(&sb, dMonth.Render(usd(p)))
+		fmt.Fprintln(&sb, dMonth.Render(usd(p))+dBody.Render(b.stockNote()))
 	} else {
 		fmt.Fprintln(&sb, dLabel.Render("price unavailable"))
 	}

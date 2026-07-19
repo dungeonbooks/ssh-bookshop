@@ -34,8 +34,24 @@ type Book struct {
 	Cents       int64  // price from Square, 0 when we don't carry it
 	VariationID string // Square catalog variation, needed to build an order
 	Stock       int    // on-hand at the shop; can go negative when oversold
+	Tracked     bool   // Square keeps a count for this book, so Stock means something
 	Sellable    bool   // in the catalog and either in stock or not inventoried
 	ListCents   int64  // publisher list price, for books we don't stock
+}
+
+// lowStock is where a count stops being reassuring and starts being useful.
+const lowStock = 3
+
+// stockNote warns when the shelf is nearly empty. Only for books Square keeps a
+// count for: an untracked book reads as zero, and "only 0 left" beside an add
+// button would be nonsense. Silent above the threshold, because a count that
+// appears on everything is just decoration, and manufacturing urgency out of a
+// number nobody checked is how shops end up lying.
+func (b Book) stockNote() string {
+	if !b.Tracked || !b.Sellable || b.Stock > lowStock {
+		return ""
+	}
+	return fmt.Sprintf("   only %d left", b.Stock)
 }
 
 // Price is what to show. Square is authoritative for anything on our shelf;

@@ -240,7 +240,7 @@ func loadShop(books []Book) (priced int, err error) {
 		if id == "" {
 			continue
 		}
-		books[i].Stock = qty[id]
+		books[i].Stock, books[i].Tracked = qty[id], !untracked[id]
 		books[i].Sellable = untracked[id] || qty[id] > 0
 	}
 
@@ -255,20 +255,96 @@ type checkout struct {
 	OrderID string
 }
 
-// createLink builds the buyer's cart on Square and returns a hosted checkout.
-// Passing an order (rather than an ad hoc name and price) is what gets us
-// itemisation, tax, and inventory for free.
-func (c *squareClient) createLink(ctx context.Context, lines []cartLine, idempotency string) (checkout, error) {
+// verifyCart is the last gate before someone is asked for money: it compares
+// the cart against what Square says right now. Split out from createLink so the
+// rules can be tested without creating an order.
+func verifyCart(lines []cartLine, fresh map[string]freshItem) error {
+	_, err := verifyCartItems(lines, fresh)
+	return err
+}
+
+func verifyCartItems(lines []cartLine, fresh map[string]freshItem) ([]map[string]any, error) {
 	items := make([]map[string]any, 0, len(lines))
 	for _, l := range lines {
 		b := catalog[l.idx]
-		if !b.Sellable {
-			return checkout{}, fmt.Errorf("%s is no longer available", b.BookTitle)
+		f, ok := fresh[b.VariationID]
+		switch {
+		case !ok || !f.sellable:
+			return nil, fmt.Errorf("%s just sold out", b.BookTitle)
+		case !f.untracked && f.stock < l.qty:
+			return nil, fmt.Errorf("only %d left of %s", f.stock, b.BookTitle)
+		case f.cents != b.Cents:
+			// Better to send them back to a corrected shelf than to quote one
+			// price and charge another. The fresh figures go back with the
+			// error so the shelf updates and a retry isn't doomed to repeat.
+			return nil, fmt.Errorf("%s is now %s, not %s", b.BookTitle, usd(f.cents), usd(b.Cents))
 		}
 		items = append(items, map[string]any{
 			"catalog_object_id": b.VariationID,
 			"quantity":          fmt.Sprint(l.qty),
 		})
+	}
+	return items, nil
+}
+
+// freshItem is what Square says about a book right now, as opposed to at boot.
+type freshItem struct {
+	cents     int64
+	stock     int
+	untracked bool
+	sellable  bool
+}
+
+// recheck re-reads price and stock for everything in the cart, keyed by
+// variation id.
+func (c *squareClient) recheck(ctx context.Context, lines []cartLine) (map[string]freshItem, error) {
+	out := map[string]freshItem{}
+	var ids []string
+	prices := map[string]int64{}
+	for _, l := range lines {
+		b := catalog[l.idx]
+		id, cents, err := c.lookup(ctx, b.ISBN)
+		if err != nil {
+			return nil, err
+		}
+		if id == "" {
+			continue // gone from the catalog entirely; caller reports sold out
+		}
+		ids = append(ids, id)
+		prices[id] = cents
+	}
+
+	qty, untracked, err := c.stock(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		out[id] = freshItem{
+			cents:     prices[id],
+			stock:     qty[id],
+			untracked: untracked[id],
+			sellable:  untracked[id] || qty[id] > 0,
+		}
+	}
+	return out, nil
+}
+
+// createLink builds the buyer's cart on Square and returns a hosted checkout.
+// Passing an order (rather than an ad hoc name and price) is what gets us
+// itemisation, tax, and inventory for free.
+func (c *squareClient) createLink(ctx context.Context, lines []cartLine, idempotency string) (checkout, map[string]freshItem, error) {
+	// Stock and price were read when the shop started, which could have been
+	// days ago. Square charges the current catalog price and will sell past
+	// zero, so both are re-checked here: this is the last moment before someone
+	// is asked for money, and the only one where being wrong costs them.
+	fresh, err := c.recheck(ctx, lines)
+	if err != nil {
+		return checkout{}, nil, err
+	}
+
+	items, err := verifyCartItems(lines, fresh)
+	if err != nil {
+		return checkout{}, fresh, err
 	}
 
 	body := map[string]any{
@@ -289,12 +365,12 @@ func (c *squareClient) createLink(ctx context.Context, lines []cartLine, idempot
 		} `json:"payment_link"`
 	}
 	if err := c.call(ctx, http.MethodPost, "/v2/online-checkout/payment-links", body, &out); err != nil {
-		return checkout{}, err
+		return checkout{}, fresh, err
 	}
 	if out.PaymentLink.URL == "" {
-		return checkout{}, fmt.Errorf("square returned no checkout url")
+		return checkout{}, fresh, fmt.Errorf("square returned no checkout url")
 	}
-	return checkout{URL: out.PaymentLink.URL, OrderID: out.PaymentLink.OrderID}, nil
+	return checkout{URL: out.PaymentLink.URL, OrderID: out.PaymentLink.OrderID}, fresh, nil
 }
 
 // paid reports whether the order has been settled. The buyer pays on a page

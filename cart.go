@@ -32,8 +32,9 @@ const (
 const pollEvery = 3 * time.Second
 
 type checkoutMsg struct {
-	out checkout
-	err error
+	out   checkout
+	fresh map[string]freshItem // what Square said just now, applied to the shelf
+	err   error
 }
 
 type paidMsg struct {
@@ -66,8 +67,8 @@ func startCheckout(lines []cartLine, key string) tea.Cmd {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), squareTimeout)
 		defer cancel()
-		out, err := sq.createLink(ctx, lines, key)
-		return checkoutMsg{out: out, err: err}
+		out, fresh, err := sq.createLink(ctx, lines, key)
+		return checkoutMsg{out: out, fresh: fresh, err: err}
 	}
 }
 
