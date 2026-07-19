@@ -22,13 +22,15 @@ func TestQRMatchesBitmap(t *testing.T) {
 		t.Fatal(err)
 	}
 	bm := q.Bitmap()
-	trim := 4 - quietModules
-	bm = bm[trim : len(bm)-trim]
+	bm = bm[4-quietTop : len(bm)-(4-quietBottom)]
 	for i := range bm {
-		bm[i] = bm[i][trim : len(bm[i])-trim]
+		bm[i] = bm[i][4-quietX : len(bm[i])-(4-quietX)]
 	}
 
-	if got, want := len(lines), (len(bm)+1)/2; got != want {
+	if len(bm)%2 != 0 {
+		t.Fatalf("module rows = %d, want even so no half-row is padded", len(bm))
+	}
+	if got, want := len(lines), len(bm)/2; got != want {
 		t.Fatalf("lines = %d, want %d", got, want)
 	}
 	for y := 0; y < len(bm); y += 2 {
@@ -38,7 +40,7 @@ func TestQRMatchesBitmap(t *testing.T) {
 		}
 		for x := range bm[y] {
 			top := bm[y][x]
-			bottom := y+1 < len(bm) && bm[y+1][x]
+			bottom := bm[y+1][x]
 			// dark module must NOT be a bright half
 			gotTop := row[x] == '█' || row[x] == '▀'
 			gotBottom := row[x] == '█' || row[x] == '▄'
@@ -53,16 +55,47 @@ func TestQRMatchesBitmap(t *testing.T) {
 }
 
 // TestQRQuietZone guards the margin: too little and phone cameras stop finding
-// the code.
+// the code. The first and last rows must both be a full light cell, so the code
+// is not lopsided.
 func TestQRQuietZone(t *testing.T) {
 	lines := qrLines("https://square.link/u/AbCd1234")
-	first := lines[0]
-	if strings.Trim(first, "█") != "" {
-		t.Errorf("first row should be all light (quiet zone), got %q", first)
+	for _, idx := range []int{0, len(lines) - 1} {
+		if strings.Trim(lines[idx], "█") != "" {
+			t.Errorf("row %d should be all light (quiet zone), got %q", idx, lines[idx])
+		}
+	}
+	// and exactly one such row at each end, or the margin is uneven
+	if strings.Trim(lines[1], "█") == "" {
+		t.Error("two full light rows at the top: quiet zone is lopsided")
+	}
+	if strings.Trim(lines[len(lines)-2], "█") == "" {
+		t.Error("two full light rows at the bottom: quiet zone is lopsided")
 	}
 	for _, l := range lines {
 		if !strings.HasPrefix(l, "██") || !strings.HasSuffix(l, "██") {
 			t.Errorf("row lacks side quiet zone: %q", l)
+		}
+	}
+}
+
+// TestQRFitsCheckout guards the case that actually broke: a sandbox payment URL
+// is longer than a production one, so its QR is taller, and the checkout screen
+// silently fell back to the bare link. Both must render the code.
+func TestQRFitsCheckout(t *testing.T) {
+	for _, url := range []string{
+		"https://square.link/u/E9zH3J5R",
+		"https://sandbox.square.link/u/E9zH3J5R",
+	} {
+		m := newModel(100, 40, "k")
+		m.ready = true
+		m.tab, m.step = tabCart, stepPay
+		m.checkout = checkout{URL: url, OrderID: "O1"}
+		out := ansi.ReplaceAllString(m.View(), "")
+		if !strings.Contains(out, "█") {
+			t.Errorf("%s: no QR rendered on the checkout screen", url)
+		}
+		if !strings.Contains(out, url) {
+			t.Errorf("%s: url missing from the checkout screen", url)
 		}
 	}
 }

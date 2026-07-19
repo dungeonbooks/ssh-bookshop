@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -39,9 +41,24 @@ type paidMsg struct {
 	err  error
 }
 
-// startCheckout builds the order on Square and returns a hosted link. The
-// idempotency key is per attempt, so a retry after a network error doesn't
-// create a second order.
+// newIdempotencyKey is fresh per checkout attempt. Square remembers keys well
+// past the life of the link they created, so anything derived from the session
+// or the order number collides the second time someone checks out: abandoning a
+// checkout and starting again is the common case, and it must work.
+//
+// Nothing here retries automatically, so a per-attempt key costs us nothing:
+// the protection idempotency exists for is against a retry we never send.
+func newIdempotencyKey() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// Fall back to the clock rather than a constant, which would collide
+		// on the very next attempt.
+		return fmt.Sprintf("t-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// startCheckout builds the order on Square and returns a hosted link.
 func startCheckout(lines []cartLine, key string) tea.Cmd {
 	return func() tea.Msg {
 		if sq == nil {
@@ -70,9 +87,9 @@ func pollPaid(orderID string) tea.Cmd {
 // --- cart maths ------------------------------------------------------------
 
 func (m *model) addToCart(idx int) {
-	// Only books Square can sell. Everything else links out to Bookshop, and
-	// offering a cart we can't fulfil would be a lie.
-	if catalog[idx].VariationID == "" {
+	// Only books we can actually hand over. Everything else links out to
+	// Bookshop, because offering a cart we can't fulfil would be a lie.
+	if !catalog[idx].Sellable {
 		return
 	}
 	for i := range m.cart {

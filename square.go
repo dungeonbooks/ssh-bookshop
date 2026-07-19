@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -128,6 +130,45 @@ func (c *squareClient) lookup(ctx context.Context, isbn string) (variationID str
 	return "", 0, nil
 }
 
+// stock reports on-hand counts for the given variations. A variation with no
+// inventory record is reported as untracked (true), because we can't prove such
+// an item is out and refusing to sell it would be worse than the alternative.
+//
+// Counts can be negative when a shop oversells, so "in stock" means > 0.
+func (c *squareClient) stock(ctx context.Context, ids []string) (qty map[string]int, untracked map[string]bool, err error) {
+	qty, untracked = map[string]int{}, map[string]bool{}
+	for _, id := range ids {
+		untracked[id] = true
+	}
+	if len(ids) == 0 {
+		return qty, untracked, nil
+	}
+
+	var out struct {
+		Counts []struct {
+			CatalogObjectID string `json:"catalog_object_id"`
+			State           string `json:"state"`
+			Quantity        string `json:"quantity"`
+		} `json:"counts"`
+	}
+	body := map[string]any{"catalog_object_ids": ids, "location_ids": []string{c.locationID}}
+	if err := c.call(ctx, http.MethodPost, "/v2/inventory/counts/batch-retrieve", body, &out); err != nil {
+		return qty, untracked, err
+	}
+	for _, ct := range out.Counts {
+		if ct.State != "IN_STOCK" {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimSuffix(ct.Quantity, ".0"))
+		if err != nil {
+			continue
+		}
+		qty[ct.CatalogObjectID] = n
+		untracked[ct.CatalogObjectID] = false
+	}
+	return qty, untracked, nil
+}
+
 // activeLocation picks the location that can take card payments. Overridable,
 // because an account with several could otherwise sell from the wrong one.
 func (c *squareClient) activeLocation(ctx context.Context) (string, error) {
@@ -174,6 +215,7 @@ func loadShop(books []Book) (priced int, err error) {
 	}
 	c.locationID = loc
 
+	var ids []string
 	for i := range books {
 		id, cents, err := c.lookup(ctx, books[i].ISBN)
 		if err != nil {
@@ -181,9 +223,27 @@ func loadShop(books []Book) (priced int, err error) {
 		}
 		if cents > 0 {
 			books[i].VariationID, books[i].Cents = id, cents
+			ids = append(ids, id)
 			priced++
 		}
 	}
+
+	// Being in the catalog is not the same as being on the shelf. A book Square
+	// knows about but has none of is sold out, and selling it would mean taking
+	// money for something we can't hand over.
+	qty, untracked, err := c.stock(ctx, ids)
+	if err != nil {
+		return priced, err
+	}
+	for i := range books {
+		id := books[i].VariationID
+		if id == "" {
+			continue
+		}
+		books[i].Stock = qty[id]
+		books[i].Sellable = untracked[id] || qty[id] > 0
+	}
+
 	sq = c
 	return priced, nil
 }
@@ -202,8 +262,8 @@ func (c *squareClient) createLink(ctx context.Context, lines []cartLine, idempot
 	items := make([]map[string]any, 0, len(lines))
 	for _, l := range lines {
 		b := catalog[l.idx]
-		if b.VariationID == "" {
-			return checkout{}, fmt.Errorf("%s is not in the square catalog", b.BookTitle)
+		if !b.Sellable {
+			return checkout{}, fmt.Errorf("%s is no longer available", b.BookTitle)
 		}
 		items = append(items, map[string]any{
 			"catalog_object_id": b.VariationID,

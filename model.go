@@ -92,11 +92,11 @@ type model struct {
 	cursor      int // index into catalog (shop)
 	acct        int // index into account sub-pages
 	cart        []cartLine
+	placed      []cartLine // what was bought, kept for the receipt screens
 	cartCursor  int
 	step        step
 	checkout    checkout
 	checkoutErr error
-	checkoutSeq int // bumped per order so idempotency keys don't collide
 	width       int
 	height      int
 	ready       bool // false while the splash shows
@@ -150,13 +150,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case blinkMsg:
-		m.phase++
 		m.cursorOn = !m.cursorOn
-		if m.phase >= blinkPhases {
-			m.ready = true
-			return m, nil
+		if !m.ready {
+			m.phase++
+			if m.phase >= blinkPhases {
+				m.ready = true
+				return m, nil
+			}
+			return m, blinkTick()
 		}
-		return m, blinkTick()
+		// Keep blinking only while something is actually pending, so an idle
+		// shop isn't redrawing itself forever.
+		if m.tab == tabCart && m.step == stepPay {
+			return m, blinkTick()
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		// any key skips the splash
@@ -252,13 +260,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.step = stepPay
 				m.checkoutErr = nil
 				m.checkout = checkout{}
-				return m, startCheckout(m.cart, m.fingerprint+"-"+fmt.Sprint(m.checkoutSeq))
+				return m, tea.Batch(startCheckout(m.cart, newIdempotencyKey()), blinkTick())
 			case m.tab == tabCart && m.step == stepDone:
 				m.step = stepThanks
 			case m.tab == tabCart && m.step == stepThanks:
-				// Order's done: clear the cart and go back to the shelf.
-				m.cart, m.cartCursor, m.step = nil, 0, stepCart
-				m.checkout, m.checkoutSeq = checkout{}, m.checkoutSeq+1
+				// Order's done: forget it and go back to the shelf.
+				m.placed, m.cart, m.cartCursor, m.step = nil, nil, 0, stepCart
+				m.checkout = checkout{}
 				m.tab = tabShop
 			}
 		}
@@ -278,6 +286,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, pollPaid(m.checkout.OrderID)
 		}
 		if msg.paid {
+			// Empty the cart the moment Square confirms, so the nav total goes
+			// to zero on the order screen rather than lingering behind a letter
+			// nobody has dismissed yet. The lines are kept for the receipt.
+			m.placed, m.cart, m.cartCursor = m.cart, nil, 0
 			m.step = stepDone
 			return m, nil
 		}
@@ -311,6 +323,13 @@ func (m model) dims() (cw, rightW, bodyH int, twoCol bool) {
 		rightW = cw
 	}
 	bodyH = bodyMax
+	// The QR screen is a single centred block, and the code is tall: a sandbox
+	// payment URL is 8 characters longer than a production one, which is enough
+	// to push it past the standard body height. Let that one screen use the
+	// whole window rather than dropping the code.
+	if m.tab == tabCart && m.step == stepPay {
+		bodyH = m.height
+	}
 	// reserve one blank row at the bottom so the footer never sits on the last
 	// line when compressed (terminal.shop caps its block at height-1)
 	if avail := m.height - chromeH - 1; bodyH > avail {
@@ -645,7 +664,7 @@ func (m model) detailView(w int) string {
 // terminal.shop's bare quantity stepper; the rest can only be linked out to,
 // so they show the link itself.
 func (m model) action(w int, b Book) string {
-	if b.VariationID != "" {
+	if b.Sellable {
 		// "- " and " +" dim, the count bright: same as their stepper.
 		return dBody.Render("- ") + dValue.Render(fmt.Sprintf(" %d ", m.qtyInCart(m.cursor))) + dBody.Render(" +")
 	}
@@ -780,7 +799,13 @@ func (m model) payView(w, h int) string {
 	fmt.Fprintln(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center, dBody.Render("scan or copy to check out")))
 	fmt.Fprintln(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center,
 		hyperlink(m.checkout.URL, dLink.Render(m.checkout.URL))))
-	fmt.Fprint(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center, dBody.Render("waiting for payment…")))
+	// A cursor rather than an ellipsis: it shows the shop is still watching.
+	cursor := " "
+	if m.cursorOn {
+		cursor = logoStyle.Render("█")
+	}
+	fmt.Fprint(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center,
+		dBody.Render("waiting for payment ")+cursor))
 	return sb.String()
 }
 
@@ -788,25 +813,31 @@ func (m model) doneView(w int) string {
 	var sb strings.Builder
 	fmt.Fprintln(&sb, dValue.Render(" order complete!"))
 	fmt.Fprintln(&sb)
-	for _, l := range m.cart {
+	for _, l := range m.placed {
 		fmt.Fprintf(&sb, " %s\n", dBody.Render(fmt.Sprintf("%s (x%d)", catalog[l.idx].BookTitle, l.qty)))
 	}
 	fmt.Fprintln(&sb)
-	fmt.Fprint(&sb, dBody.Render(" press enter to continue"))
+	fmt.Fprint(&sb, dBody.Render(" press ")+dValue.Render("enter")+dBody.Render(" to continue"))
 	return sb.String()
 }
 
 // thanksView breaks the lowercase house style on purpose: it's a letter.
 func (m model) thanksView(w int) string {
+	// PaddingLeft rather than a prefix, so every wrapped line lands on the same
+	// column as the rest of the body instead of only the first.
+	para := lipgloss.NewStyle().Foreground(gray).Width(w).PaddingLeft(1)
 	var sb strings.Builder
-	fmt.Fprintln(&sb, dBody.Width(w).Render("Thank you for ordering from Dungeon Books."))
+	fmt.Fprintln(&sb, para.Render("Thank you for ordering from Dungeon Books."))
 	fmt.Fprintln(&sb)
-	fmt.Fprintln(&sb, dBody.Width(w).Render("Your books are set aside at the shop in Jersey City. Square has emailed you a receipt, and we'll be in touch about pickup or shipping."))
+	fmt.Fprintln(&sb, para.Render("Your books are set aside at the shop in Jersey City. Square has emailed you a receipt, and we'll be in touch about pickup or shipping."))
 	fmt.Fprintln(&sb)
-	fmt.Fprintln(&sb, dBody.Width(w).Render("If you're reading the book club pick, come argue about it with us at the end of the month."))
+	fmt.Fprintln(&sb, para.Render("If you're reading the book club pick, come argue about it with us at the end of the month."))
 	fmt.Fprintln(&sb)
-	fmt.Fprintln(&sb, dBody.Render("Carrie and Panat"))
-	fmt.Fprintln(&sb, dBody.Render("Dungeon Books"))
+	// The signature is the one bright line: it reads as a hand rather than a
+	// system message.
+	sig := lipgloss.NewStyle().Foreground(white).Width(w).PaddingLeft(1)
+	fmt.Fprintln(&sb, sig.Render("Carrie and Panat"))
+	fmt.Fprint(&sb, para.Render("Dungeon Books"))
 	return sb.String()
 }
 

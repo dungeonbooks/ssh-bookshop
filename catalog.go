@@ -33,6 +33,8 @@ type Book struct {
 	Pages       int    // 0 when unknown
 	Cents       int64  // price from Square, 0 when we don't carry it
 	VariationID string // Square catalog variation, needed to build an order
+	Stock       int    // on-hand at the shop; can go negative when oversold
+	Sellable    bool   // in the catalog and either in stock or not inventoried
 	ListCents   int64  // publisher list price, for books we don't stock
 }
 

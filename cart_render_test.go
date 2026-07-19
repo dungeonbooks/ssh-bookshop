@@ -10,8 +10,8 @@ import (
 // TestCartRender fills a cart with fake Square data and prints the view, so the
 // box layout can be checked without a live catalog or a real order.
 func TestCartRender(t *testing.T) {
-	catalog[0].Cents, catalog[0].VariationID = 3000, "VAR0"
-	catalog[1].Cents, catalog[1].VariationID = 2899, "VAR1"
+	catalog[0].Cents, catalog[0].VariationID, catalog[0].Sellable = 3000, "VAR0", true
+	catalog[1].Cents, catalog[1].VariationID, catalog[1].Sellable = 2899, "VAR1", true
 
 	m := newModel(100, 30, "SHA256:test")
 	mm, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -35,7 +35,7 @@ func TestCartRender(t *testing.T) {
 // TestCartRowWidthsStable checks the terminal.shop detail: focusing a row swaps
 // the +/- glyphs in for spaces, so nothing shifts as the cursor moves.
 func TestCartRowWidthsStable(t *testing.T) {
-	catalog[0].Cents, catalog[0].VariationID = 3000, "VAR0"
+	catalog[0].Cents, catalog[0].VariationID, catalog[0].Sellable = 3000, "VAR0", true
 	m := newModel(100, 30, "k")
 	m.addToCart(0)
 
@@ -56,7 +56,7 @@ func TestCartRowWidthsStable(t *testing.T) {
 // TestPayRender shows the QR handoff with a stand-in URL, so the layout can be
 // checked without creating a real payment link.
 func TestPayRender(t *testing.T) {
-	catalog[0].Cents, catalog[0].VariationID = 3000, "VAR0"
+	catalog[0].Cents, catalog[0].VariationID, catalog[0].Sellable = 3000, "VAR0", true
 	m := newModel(100, 40, "k")
 	m.ready = true
 	m.addToCart(0)

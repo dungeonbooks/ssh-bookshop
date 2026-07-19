@@ -4,11 +4,22 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-// quietModules is the light margin kept around the code. The spec asks for 4;
-// terminal.shop renders none at all and scans fine, because the terminal
-// background supplies the contrast. 2 is the compromise: it survives a phone
-// camera without costing 2 extra rows of a short window.
-const quietModules = 2
+// Quiet zone kept around the code, in modules. The spec asks for 4 on every
+// side; terminal.shop renders none at all and still scans, because the terminal
+// background supplies the contrast. These are the compromise that keeps the
+// code above its URL in a short window.
+//
+// The vertical pair is deliberately uneven. A QR is always an odd number of
+// modules across, so an even quiet zone leaves an odd row count, and half-block
+// rendering then pads the final half-row light: one extra white cell along the
+// bottom and none on top. Three above and two below makes the total even, so
+// each side ends up with one full white cell plus a half-light row against the
+// data. Symmetric, and nothing is padded.
+const (
+	quietX      = 2
+	quietTop    = 3
+	quietBottom = 2
+)
 
 // qrLines renders a URL as half-block rows. Each cell carries two module rows,
 // so the code stays roughly square instead of doubling in height.
@@ -23,39 +34,32 @@ func qrLines(url string) []string {
 		return nil
 	}
 	bm := q.Bitmap() // true = dark module; includes a 4-module quiet zone
-	if len(bm) == 0 {
+	if len(bm) < 8 || len(bm[0]) < 8 {
 		return nil
 	}
 
-	trim := 4 - quietModules
-	if trim < 0 || len(bm) <= 2*trim {
-		trim = 0
-	}
-	bm = bm[trim : len(bm)-trim]
+	// The library gives 4 modules of quiet zone; trim down to ours.
+	bm = bm[4-quietTop : len(bm)-(4-quietBottom)]
 	for i := range bm {
-		bm[i] = bm[i][trim : len(bm[i])-trim]
+		bm[i] = bm[i][4-quietX : len(bm[i])-(4-quietX)]
+	}
+	if len(bm)%2 != 0 {
+		return nil // would need padding, which is the asymmetry we just fixed
 	}
 
-	lines := make([]string, 0, (len(bm)+1)/2)
+	lines := make([]string, 0, len(bm)/2)
 	for y := 0; y < len(bm); y += 2 {
-		row := make([]rune, 0, len(bm[y]))
+		row := make([]rune, len(bm[y]))
 		for x := range bm[y] {
-			top := bm[y][x]
-			// An odd number of module rows leaves the last half empty, which
-			// reads as a light module and keeps the quiet zone intact.
-			bottom := false
-			if y+1 < len(bm) {
-				bottom = bm[y+1][x]
-			}
-			switch {
+			switch top, bottom := bm[y][x], bm[y+1][x]; {
 			case top && bottom:
-				row = append(row, ' ')
+				row[x] = ' '
 			case top:
-				row = append(row, '▄')
+				row[x] = '▄'
 			case bottom:
-				row = append(row, '▀')
+				row[x] = '▀'
 			default:
-				row = append(row, '█')
+				row[x] = '█'
 			}
 		}
 		lines = append(lines, string(row))
