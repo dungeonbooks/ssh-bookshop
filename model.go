@@ -78,6 +78,15 @@ func (t tab) String() string {
 	}
 }
 
+// sessionInfo is what the debug info page reports back, straight from the SSH
+// session rather than guessed.
+type sessionInfo struct {
+	mode    string
+	term    string
+	user    string
+	command string
+}
+
 type model struct {
 	tab         tab
 	cursor      int // index into catalog (shop)
@@ -86,11 +95,15 @@ type model struct {
 	width       int
 	height      int
 	ready       bool // false while the splash shows
+	cursorOn    bool // splash cursor visibility
+	phase       int  // splash blink phases elapsed
+	copied      bool // the current book's link was just copied
 	fingerprint string
+	sess        sessionInfo
 }
 
 func newModel(width, height int, fingerprint string) model {
-	m := model{width: width, height: height, fingerprint: fingerprint}
+	m := model{width: width, height: height, fingerprint: fingerprint, cursorOn: true}
 	// Open on this month's pick — the thing someone connects to see.
 	if i := featured(time.Now()); i >= 0 {
 		m.cursor = i
@@ -98,11 +111,21 @@ func newModel(width, height int, fingerprint string) model {
 	return m
 }
 
-type readyMsg struct{}
+type blinkMsg struct{}
+
+// blinkPeriod is one on or off phase, so two full blinks take 4 of them.
+const (
+	blinkPeriod = 600 * time.Millisecond
+	blinkPhases = 4
+)
+
+func blinkTick() tea.Cmd {
+	return tea.Tick(blinkPeriod, func(time.Time) tea.Msg { return blinkMsg{} })
+}
 
 func (m model) Init() tea.Cmd {
-	// brief wordmark splash on connect, like terminal.shop
-	return tea.Tick(700*time.Millisecond, func(time.Time) tea.Msg { return readyMsg{} })
+	// wordmark splash on connect: the cursor blinks twice, then the shop loads
+	return blinkTick()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -111,9 +134,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 
-	case readyMsg:
-		m.ready = true
-		return m, nil
+	case blinkMsg:
+		m.phase++
+		m.cursorOn = !m.cursorOn
+		if m.phase >= blinkPhases {
+			m.ready = true
+			return m, nil
+		}
+		return m, blinkTick()
 
 	case tea.KeyMsg:
 		// any key skips the splash
@@ -142,6 +170,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tabShop:
 				if m.cursor > 0 {
 					m.cursor--
+					m.copied = false
 				}
 			case tabAccount:
 				if m.acct > 0 {
@@ -153,15 +182,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tabShop:
 				if m.cursor < len(catalog)-1 {
 					m.cursor++
+					m.copied = false
 				}
 			case tabAccount:
 				if m.acct < acctPageCount-1 {
 					m.acct++
 				}
 			}
-		case "+", "enter":
-			if m.tab == tabShop && !catalog[m.cursor].Free {
-				m.cart = append(m.cart, catalog[m.cursor])
+		case "enter":
+			// A server can't open a browser on someone else's machine, so
+			// "open the link" means putting it on their clipboard (OSC 52)
+			// and leaving it clickable (OSC 8) where that is supported.
+			if m.tab == tabShop {
+				m.copied = true
 			}
 		}
 	}
@@ -204,11 +237,12 @@ func (m model) dims() (cw, rightW, bodyH int, twoCol bool) {
 
 func (m model) View() string {
 	if !m.ready {
-		splash := lipgloss.JoinVertical(lipgloss.Center,
-			logoStyle.Render("dungeonbooks"),
-			"",
-			promoStyle.Render("a bookstore over ssh"),
-		)
+		// A space when the cursor is off, so the wordmark never shifts.
+		cursor := " "
+		if m.cursorOn {
+			cursor = logoStyle.Render("█")
+		}
+		splash := active.Render("dungeonbooks") + cursor
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, splash)
 	}
 
@@ -275,7 +309,11 @@ func (m model) View() string {
 	if lipgloss.Height(stack) >= avail {
 		vpos = lipgloss.Top
 	}
-	return lipgloss.Place(m.width, avail, lipgloss.Center, vpos, stack)
+	out := lipgloss.Place(m.width, avail, lipgloss.Center, vpos, stack)
+	if m.copied && m.tab == tabShop {
+		out = osc52(catalog[m.cursor].BuyURL()) + out
+	}
+	return out
 }
 
 // nav draws the boxed cell bar. Cells stretch to fill cw so the bar spans the
@@ -446,7 +484,9 @@ func (m model) productList(maxRows, colW int) string {
 			name = name[:maxw-1] + "…"
 		}
 		if i == m.cursor {
-			rows = append(rows, row{text: selItem.Render(" " + name), bookIdx: i})
+			// Width inside the style so the highlight spans the whole column,
+			// as terminal.shop's does, rather than hugging the text.
+			rows = append(rows, row{text: selItem.Width(leftCol - 1).Render(" " + name), bookIdx: i})
 		} else {
 			rows = append(rows, row{text: romItem.Render(" " + name), bookIdx: i})
 		}
@@ -488,44 +528,58 @@ func (m model) detailView(w int) string {
 	// then the single number that matters, then the description.
 	fmt.Fprintln(&sb, dTitle.Width(w).Render(b.BookTitle))
 
-	attrs := []string{b.Author}
-	if b.ISBN != "" {
-		attrs = append(attrs, b.ISBN)
-	}
-	fmt.Fprintln(&sb, dLabel.Width(w).Render(strings.Join(attrs, " | ")))
+	fmt.Fprintln(&sb, dLabel.Width(w).Render(strings.Join(b.attrs(), " | ")))
 	fmt.Fprintln(&sb)
 
-	if ml := monthLabel(b.Month); ml != "" {
-		fmt.Fprintln(&sb, dMonth.Render(ml))
-	} else if b.Publisher != "" {
-		fmt.Fprintf(&sb, "%s, %d\n", dValue.Render(b.Publisher), b.Year)
+	// The price, where terminal.shop puts it.
+	if p := b.Price(); p > 0 {
+		fmt.Fprintln(&sb, dMonth.Render(usd(p)))
+	} else {
+		fmt.Fprintln(&sb, dLabel.Render("price unavailable"))
 	}
 	fmt.Fprintln(&sb)
 	fmt.Fprintln(&sb, dBody.Width(w).Render(b.Blurb))
 	fmt.Fprintln(&sb)
-	if b.Free {
-		fmt.Fprintln(&sb, dLabel.Render("read free:"))
-		fmt.Fprint(&sb, dLink.Render(b.DownloadURL))
-	} else {
-		fmt.Fprintln(&sb, dLabel.Render(b.BuyLabel()))
-		fmt.Fprint(&sb, dLink.Render(b.BuyURL()))
-	}
+	fmt.Fprint(&sb, m.action(w, b))
 	return sb.String()
+}
+
+// action is the boxed call-to-action, like terminal.shop's "subscribe  enter".
+func (m model) action(w int, b Book) string {
+	label := "buy at dungeonbooks.com"
+	if !strings.Contains(b.BuyURL(), "dungeonbooks.com") {
+		label = "buy at bookshop.org"
+	}
+	if m.copied {
+		label = "link copied to clipboard"
+	}
+	inner := w - 4
+	if inner < len(label)+8 {
+		inner = len(label) + 8
+	}
+	gap := inner - lipgloss.Width(label) - lipgloss.Width("enter")
+	if gap < 1 {
+		gap = 1
+	}
+	row := " " + dValue.Render(label) + strings.Repeat(" ", gap) + dLabel.Render("enter") + " "
+	return boxDim.Render("┌"+strings.Repeat("─", inner+2)+"┐") + "\n" +
+		boxDim.Render("│") + row + boxDim.Render("│") + "\n" +
+		boxDim.Render("└"+strings.Repeat("─", inner+2)+"┘")
 }
 
 func (m model) cartView(w int) string {
 	if len(m.cart) == 0 {
-		return dBody.Width(w).Render("Your cart is empty. In the shop, press + to add the highlighted book.")
+		return lipgloss.PlaceHorizontal(w, lipgloss.Center, romItem.Render("your cart is empty"))
 	}
 	var sb strings.Builder
 	fmt.Fprintln(&sb, dTitle.Render(fmt.Sprintf("cart · %d item(s)", len(m.cart))))
 	fmt.Fprintln(&sb)
 	for i, b := range m.cart {
 		fmt.Fprintf(&sb, "%s %s\n", dLabel.Render(fmt.Sprintf("%d.", i+1)), dValue.Width(w-4).Render(b.BookTitle))
-		fmt.Fprintf(&sb, "   %s\n", dLink.Render(b.BuyURL()))
+		fmt.Fprintf(&sb, "   %s\n", hyperlink(b.BuyURL(), dLink.Render(b.BuyURL())))
 	}
 	fmt.Fprintln(&sb)
-	fmt.Fprint(&sb, dBody.Width(w).Render("Open these links in a browser to check out at dungeonbooks.com or Bookshop.org."))
+	fmt.Fprint(&sb, dBody.Width(w).Render("open these links in a browser to check out."))
 	return sb.String()
 }
 
@@ -534,16 +588,18 @@ type acctPage struct {
 	body  string
 }
 
-// acctPages builds the account sub-pages. Everything here is real for this app.
 // acctPageCount is the menu length. Kept alongside acctPages so navigation can
 // bound the cursor without rendering every page body just to count them.
-const acctPageCount = 3
+const acctPageCount = 4
 
+// acctPages mirrors terminal.shop's account menu, minus the pages that would
+// need accounts we don't have yet (subscriptions, tokens, apps, addresses).
 func (m model) acctPages(w int) []acctPage {
 	return []acctPage{
-		{"faq", m.pgFAQ(w)},
 		{"order history", m.pgOrders(w)},
+		{"faq", m.pgFAQ(w)},
 		{"about", m.pgAbout(w)},
+		{"debug info", m.pgDebug(w)},
 	}
 }
 
@@ -551,9 +607,9 @@ func (m model) accountMenu(pages []acctPage) string {
 	var sb strings.Builder
 	for i, p := range pages {
 		if i == m.acct {
-			sb.WriteString(selItem.Render("› " + p.title))
+			sb.WriteString(selItem.Width(leftCol - 1).Render(" " + p.title))
 		} else {
-			sb.WriteString(romItem.Render("  " + p.title))
+			sb.WriteString(romItem.Render(" " + p.title))
 		}
 		sb.WriteByte('\n')
 	}
@@ -561,38 +617,71 @@ func (m model) accountMenu(pages []acctPage) string {
 }
 
 func (m model) pgFAQ(w int) string {
+	qa := []struct{ q, a string }{
+		{"help, i have a question about my order!",
+			"come by the shop and ask at the counter, or email hello@dungeonbooks.com"},
+		{"what is the book club?",
+			"we read one science fiction or fantasy novel a month. we meet at the shop in jersey city to talk about it."},
+		{"can i join the book club?",
+			"yes. check dungeonbooks.com for the next meeting. you don't have to finish the book."},
+	}
 	var sb strings.Builder
-	fmt.Fprintln(&sb, dTitle.Render("faq"))
-	fmt.Fprintln(&sb)
-	fmt.Fprintln(&sb, dLabel.Render("how do i buy a book?"))
-	fmt.Fprintln(&sb, dBody.Width(w).Render("\"buy\" opens a Bookshop.org link. Bookshop supports independent bookstores; dungeonbooks earns a small affiliate commission. No inventory, no card details here."))
-	fmt.Fprintln(&sb)
-	fmt.Fprintln(&sb, dLabel.Render("what are the free titles?"))
-	fmt.Fprintln(&sb, dBody.Width(w).Render("Some books are openly licensed and link straight to the full text."))
-	fmt.Fprintln(&sb)
-	fmt.Fprintln(&sb, dLabel.Render("why ssh?"))
-	fmt.Fprint(&sb, dBody.Width(w).Render("A bookstore you browse from any terminal. Your SSH key is your account, so there is no password or signup."))
-	return sb.String()
+	for i, p := range qa {
+		if i > 0 {
+			fmt.Fprintln(&sb)
+		}
+		fmt.Fprintln(&sb, dValue.Width(w).Render(p.q))
+		fmt.Fprintln(&sb, dBody.Width(w).Render(p.a))
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
+// pgOrders is the empty state until checkout exists. terminal.shop centers the
+// same message in the page rather than explaining itself.
 func (m model) pgOrders(w int) string {
+	return lipgloss.PlaceHorizontal(w, lipgloss.Center, romItem.Render("no orders found"))
+}
+
+func (m model) pgDebug(w int) string {
 	var sb strings.Builder
-	fmt.Fprintln(&sb, dTitle.Render("order history"))
+	fmt.Fprintln(&sb, dValue.Render("connected with an ssh key"))
 	fmt.Fprintln(&sb)
-	fmt.Fprintln(&sb, dBody.Width(w).Render("Orders are placed on Bookshop.org, not here. dungeonbooks earns a small commission on each sale and never sees your cart or card."))
+	fmt.Fprintln(&sb, dValue.Render("session"))
+	kv := func(k, v string) {
+		// A value that would wrap goes on its own indented line, so it never
+		// wraps back to column zero and breaks the block.
+		if lipgloss.Width(k)+lipgloss.Width(v)+3 > w {
+			fmt.Fprintf(&sb, "  %s\n    %s\n", dLabel.Render(k+":"), dValue.Render(v))
+			return
+		}
+		fmt.Fprintf(&sb, "  %s %s\n", dLabel.Render(k+":"), dValue.Render(v))
+	}
+	kv("mode", m.sess.mode)
+	kv("fingerprint", strings.TrimPrefix(m.fingerprint, "SHA256:"))
+	kv("term", m.sess.term)
+	kv("size", fmt.Sprintf("%dx%d", m.width, m.height))
+	kv("command", orNone(m.sess.command))
 	fmt.Fprintln(&sb)
-	fmt.Fprint(&sb, romItem.Render("no orders on file"))
-	return sb.String()
+	fmt.Fprintln(&sb, dValue.Render("account"))
+	kv("user", orNone(m.sess.user))
+	kv("cart", fmt.Sprintf("%d item(s)", len(m.cart)))
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return s
 }
 
 func (m model) pgAbout(w int) string {
 	var sb strings.Builder
-	fmt.Fprintln(&sb, dTitle.Render("about"))
+	fmt.Fprintln(&sb, dBody.Width(w).Render("an independent science fiction, fantasy, and role-playing game bookstore in jersey city, new jersey."))
 	fmt.Fprintln(&sb)
-	fmt.Fprintln(&sb, dBody.Width(w).Render("dungeonbooks is an independent science fiction, fantasy, and RPG bookstore in Jersey City, NJ. This is the same shop, browsable over SSH."))
+	fmt.Fprintln(&sb, dValue.Render("made by @ptaranat"))
 	fmt.Fprintln(&sb)
-	fmt.Fprintln(&sb, dBody.Width(w).Render("Built with Wish and Bubble Tea."))
-	fmt.Fprint(&sb, dLink.Render("github.com/dungeonbooks/ssh-bookshop"))
+	fmt.Fprint(&sb, dBody.Render("inspired by terminal.shop"))
 	return sb.String()
 }
 
@@ -609,6 +698,8 @@ func (m model) footer(cw int) string {
 	return lipgloss.PlaceHorizontal(cw, lipgloss.Center, strings.TrimRight(keys, " "))
 }
 
+// fk renders one footer hint. terminal.shop keeps the whole footer accent-free:
+// the key is bold white, the label gray.
 func fk(k, label string) string {
-	return hotkey.Render(k) + " " + inactive.Render(label) + "   "
+	return active.Render(k) + " " + inactive.Render(label) + "   "
 }

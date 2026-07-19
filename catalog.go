@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // AffiliateID is dungeonbooks' Bookshop.org affiliate identifier (matches
 // marty's BOOKSHOP_AFFILIATE_ID). Affiliate links pay a commission; every ISBN
@@ -26,6 +29,32 @@ type Book struct {
 	DownloadURL string
 	URL         string // overrides the affiliate link when we sell it ourselves
 	Month       string // book club pick month, "2026-07"
+	Format      string // "hardcover", "paperback" — the edition we stock
+	Pages       int    // 0 when unknown
+	Cents       int64  // price from Square, 0 when we don't carry it
+	ListCents   int64  // publisher list price, for books we don't stock
+}
+
+// Price is what to show. Square is authoritative for anything on our shelf;
+// otherwise fall back to list price, which is what Bookshop.org charges.
+func (b Book) Price() int64 {
+	if b.Cents > 0 {
+		return b.Cents
+	}
+	return b.ListCents
+}
+
+// attrs is the pipe-joined line under the title: author, then whatever else we
+// actually know. Anything missing is left out rather than shown empty.
+func (b Book) attrs() []string {
+	out := []string{b.Author}
+	if b.Format != "" {
+		out = append(out, b.Format)
+	}
+	if b.Pages > 0 {
+		out = append(out, fmt.Sprintf("%d pages", b.Pages))
+	}
+	return out
 }
 
 // BuyURL prefers our own store: a sale beats an affiliate commission.
