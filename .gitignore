@@ -11,3 +11,6 @@
 # go
 *.test
 *.out
+
+# terminal graph workspace, created on opening the project
+/.terminalgraph/
