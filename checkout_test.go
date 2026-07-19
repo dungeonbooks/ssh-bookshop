@@ -141,9 +141,6 @@ func TestAddToCartRespectsStock(t *testing.T) {
 		if got := m.qtyInCart(0); got != 2 {
 			t.Fatalf("cart holds %d of 2 in stock", got)
 		}
-		if !m.atStockLimit(0) {
-			t.Error("should report being at the limit")
-		}
 	})
 
 	t.Run("untracked has no cap", func(t *testing.T) {
@@ -154,9 +151,6 @@ func TestAddToCartRespectsStock(t *testing.T) {
 		}
 		if got := m.qtyInCart(0); got != 3 {
 			t.Fatalf("untracked book capped at %d, should be uncapped", got)
-		}
-		if m.atStockLimit(0) {
-			t.Error("untracked book should never report a limit")
 		}
 	})
 

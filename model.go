@@ -655,11 +655,7 @@ func (m model) detailView(w int) string {
 	// it is not struck through: that would read as a discount. The status says
 	// plainly that the shelf is empty.
 	if p := b.Price(); p > 0 {
-		note := b.stockNote()
-		if m.atStockLimit(m.cursor) {
-			note = fmt.Sprintf("   that's all %d we have", b.Stock)
-		}
-		fmt.Fprintln(&sb, dMonth.Render(usd(p))+dBody.Render(note))
+		fmt.Fprintln(&sb, dMonth.Render(usd(p))+dBody.Render(b.stockNote()))
 	} else {
 		fmt.Fprintln(&sb, dLabel.Render("price unavailable"))
 	}

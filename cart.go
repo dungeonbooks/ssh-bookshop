@@ -140,13 +140,6 @@ func (m *model) addToCart(idx int) {
 	m.cart = append(m.cart, cartLine{idx: idx, qty: 1})
 }
 
-// atStockLimit reports that the cart already holds every copy we have, so the
-// detail pane can say so instead of leaving a dead + key unexplained.
-func (m model) atStockLimit(idx int) bool {
-	b := catalog[idx]
-	return b.Tracked && b.Sellable && m.qtyInCart(idx) >= b.Stock
-}
-
 func (m *model) removeFromCart(idx int) {
 	for i := range m.cart {
 		if m.cart[i].idx != idx {
