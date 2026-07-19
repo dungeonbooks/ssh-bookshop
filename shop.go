@@ -24,14 +24,14 @@ func (m model) productList(maxRows, colW int) string {
 			rows = append(rows, row{text: " " + secHead.Render("~ "+strings.ToLower(coll)+" ~"), bookIdx: -1})
 			lastColl = coll
 		}
-		name := b.BookTitle
-		if lipgloss.Width(name) > maxw {
-			name = name[:maxw-1] + "…"
-		}
+		name := truncate(b.BookTitle, maxw)
 		if i == m.cursor {
 			// Width inside the style so the highlight spans the whole column,
-			// as terminal.shop's does, rather than hugging the text.
-			rows = append(rows, row{text: selItem.Width(leftCol - 1).Render(" " + name), bookIdx: i})
+			// as terminal.shop's does, rather than hugging the text. Sized from
+			// the column being drawn: in one-column mode that is the full
+			// content width, and a fixed leftCol would clip the focused row
+			// while its neighbours ran on.
+			rows = append(rows, row{text: selItem.Width(colW - 1).Render(" " + name), bookIdx: i})
 		} else {
 			rows = append(rows, row{text: romItem.Render(" " + name), bookIdx: i})
 		}

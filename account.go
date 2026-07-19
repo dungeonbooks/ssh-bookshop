@@ -27,11 +27,13 @@ func (m model) acctPages(w int) []acctPage {
 	}
 }
 
-func (m model) accountMenu(pages []acctPage) string {
+// accountMenu draws the page list. w is the column it is being drawn into, so
+// the highlight matches it rather than assuming the two-column sidebar.
+func (m model) accountMenu(pages []acctPage, w int) string {
 	var sb strings.Builder
 	for i, p := range pages {
 		if i == m.acct {
-			sb.WriteString(selItem.Width(leftCol - 1).Render(" " + p.title))
+			sb.WriteString(selItem.Width(w - 1).Render(" " + truncate(p.title, w-1)))
 		} else {
 			sb.WriteString(romItem.Render(" " + p.title))
 		}
