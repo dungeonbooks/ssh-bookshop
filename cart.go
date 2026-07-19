@@ -17,6 +17,33 @@ type cartLine struct {
 	qty int
 }
 
+// cartItem is a cart line frozen for handoff to a background command. Checkout
+// runs off the UI goroutine while Update keeps reading and writing the catalog,
+// so the command is given its own copy of everything it needs rather than an
+// index into shared state.
+type cartItem struct {
+	isbn        string
+	variationID string
+	title       string
+	cents       int64
+	qty         int
+}
+
+func (m model) snapshotCart() []cartItem {
+	out := make([]cartItem, 0, len(m.cart))
+	for _, l := range m.cart {
+		b := catalog[l.idx]
+		out = append(out, cartItem{
+			isbn:        b.ISBN,
+			variationID: b.VariationID,
+			title:       b.BookTitle,
+			cents:       b.Cents,
+			qty:         l.qty,
+		})
+	}
+	return out
+}
+
 // Checkout runs as a small state machine inside the cart tab.
 type step int
 
@@ -60,14 +87,14 @@ func newIdempotencyKey() string {
 }
 
 // startCheckout builds the order on Square and returns a hosted link.
-func startCheckout(lines []cartLine, key string) tea.Cmd {
+func startCheckout(items []cartItem, key string) tea.Cmd {
 	return func() tea.Msg {
 		if sq == nil {
 			return checkoutMsg{err: fmt.Errorf("square is not configured")}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), squareTimeout)
 		defer cancel()
-		out, fresh, err := sq.createLink(ctx, lines, key)
+		out, fresh, err := sq.createLink(ctx, items, key)
 		return checkoutMsg{out: out, fresh: fresh, err: err}
 	}
 }

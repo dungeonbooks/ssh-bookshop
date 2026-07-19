@@ -36,7 +36,8 @@ func checkShelf(extra []string) {
 	}
 
 	for _, isbn := range extra {
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), squareTimeout)
+		defer cancel()
 		id, cents, err := sq.lookup(ctx, isbn)
 		if err != nil {
 			fmt.Printf("\n%s: %v\n", isbn, err)

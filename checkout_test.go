@@ -9,11 +9,7 @@ import (
 // is asked for money. Each case is a way the shelf can be wrong by the time
 // someone checks out; none of them may reach Square as an order.
 func TestCheckoutRejectsStale(t *testing.T) {
-	orig := catalog[0]
-	defer func() { catalog[0] = orig }()
-	catalog[0].VariationID, catalog[0].Cents, catalog[0].Sellable = "VAR0", 3000, true
-
-	lines := []cartLine{{idx: 0, qty: 2}}
+	items := []cartItem{{isbn: "9780000000001", variationID: "VAR0", title: "A Book", cents: 3000, qty: 2}}
 
 	cases := []struct {
 		name  string
@@ -28,7 +24,7 @@ func TestCheckoutRejectsStale(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := verifyCart(lines, map[string]freshItem{"VAR0": tc.fresh})
+			err := verifyCart(items, map[string]freshItem{"VAR0": tc.fresh})
 			switch {
 			case tc.want == "" && err != nil:
 				t.Fatalf("rejected a valid cart: %v", err)
@@ -44,11 +40,7 @@ func TestCheckoutRejectsStale(t *testing.T) {
 
 // A cart holding a book Square no longer lists must not check out.
 func TestCheckoutRejectsMissing(t *testing.T) {
-	orig := catalog[0]
-	defer func() { catalog[0] = orig }()
-	catalog[0].VariationID, catalog[0].Cents, catalog[0].Sellable = "VAR0", 3000, true
-
-	err := verifyCart([]cartLine{{idx: 0, qty: 1}}, map[string]freshItem{})
+	err := verifyCart([]cartItem{{variationID: "VAR0", title: "A Book", cents: 3000, qty: 1}}, map[string]freshItem{})
 	if err == nil {
 		t.Fatal("accepted a book Square no longer lists")
 	}
@@ -107,5 +99,23 @@ func TestBuyURLFallsBackWhenSoldOut(t *testing.T) {
 				t.Fatalf("got %q, want it to contain %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestParseQuantity covers Square's stringly-typed counts. The failure mode
+// that matters is an unreadable one being treated as "no inventory tracking",
+// which would mark a book sellable.
+func TestParseQuantity(t *testing.T) {
+	ok := map[string]int{"3": 3, "3.0": 3, "3.00": 3, "0": 0, "-3": -3, " 12 ": 12, "2.9": 2}
+	for in, want := range ok {
+		got, err := parseQuantity(in)
+		if err != nil || got != want {
+			t.Errorf("parseQuantity(%q) = %d, %v; want %d, nil", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"", "  ", "lots", "3,000"} {
+		if _, err := parseQuantity(in); err == nil {
+			t.Errorf("parseQuantity(%q) accepted an unreadable count", in)
+		}
 	}
 }

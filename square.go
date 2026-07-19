@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -159,14 +160,33 @@ func (c *squareClient) stock(ctx context.Context, ids []string) (qty map[string]
 		if ct.State != "IN_STOCK" {
 			continue
 		}
-		n, err := strconv.Atoi(strings.TrimSuffix(ct.Quantity, ".0"))
+		// A count we can't read must not fall through to "untracked", which
+		// means sellable: an unparsable quantity would then let us take money
+		// for a book we may not have. Treat it as tracked and empty instead.
+		n, err := parseQuantity(ct.Quantity)
+		untracked[ct.CatalogObjectID] = false
 		if err != nil {
+			qty[ct.CatalogObjectID] = 0
 			continue
 		}
 		qty[ct.CatalogObjectID] = n
-		untracked[ct.CatalogObjectID] = false
 	}
 	return qty, untracked, nil
+}
+
+// parseQuantity reads Square's stringly-typed counts. They are decimals, so
+// "3", "3.0" and "3.00" all mean three, and fractions round down: half a book
+// is not a book we can sell.
+func parseQuantity(q string) (int, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return 0, fmt.Errorf("empty quantity")
+	}
+	f, err := strconv.ParseFloat(q, 64)
+	if err != nil {
+		return 0, fmt.Errorf("unreadable quantity %q: %w", q, err)
+	}
+	return int(math.Floor(f)), nil
 }
 
 // activeLocation picks the location that can take card payments. Overridable,
@@ -258,33 +278,32 @@ type checkout struct {
 // verifyCart is the last gate before someone is asked for money: it compares
 // the cart against what Square says right now. Split out from createLink so the
 // rules can be tested without creating an order.
-func verifyCart(lines []cartLine, fresh map[string]freshItem) error {
-	_, err := verifyCartItems(lines, fresh)
+func verifyCart(items []cartItem, fresh map[string]freshItem) error {
+	_, err := verifyCartItems(items, fresh)
 	return err
 }
 
-func verifyCartItems(lines []cartLine, fresh map[string]freshItem) ([]map[string]any, error) {
-	items := make([]map[string]any, 0, len(lines))
-	for _, l := range lines {
-		b := catalog[l.idx]
-		f, ok := fresh[b.VariationID]
+func verifyCartItems(items []cartItem, fresh map[string]freshItem) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		f, ok := fresh[it.variationID]
 		switch {
 		case !ok || !f.sellable:
-			return nil, fmt.Errorf("%s just sold out", b.BookTitle)
-		case !f.untracked && f.stock < l.qty:
-			return nil, fmt.Errorf("only %d left of %s", f.stock, b.BookTitle)
-		case f.cents != b.Cents:
+			return nil, fmt.Errorf("%s just sold out", it.title)
+		case !f.untracked && f.stock < it.qty:
+			return nil, fmt.Errorf("only %d left of %s", f.stock, it.title)
+		case f.cents != it.cents:
 			// Better to send them back to a corrected shelf than to quote one
 			// price and charge another. The fresh figures go back with the
 			// error so the shelf updates and a retry isn't doomed to repeat.
-			return nil, fmt.Errorf("%s is now %s, not %s", b.BookTitle, usd(f.cents), usd(b.Cents))
+			return nil, fmt.Errorf("%s is now %s, not %s", it.title, usd(f.cents), usd(it.cents))
 		}
-		items = append(items, map[string]any{
-			"catalog_object_id": b.VariationID,
-			"quantity":          fmt.Sprint(l.qty),
+		out = append(out, map[string]any{
+			"catalog_object_id": it.variationID,
+			"quantity":          fmt.Sprint(it.qty),
 		})
 	}
-	return items, nil
+	return out, nil
 }
 
 // freshItem is what Square says about a book right now, as opposed to at boot.
@@ -297,13 +316,12 @@ type freshItem struct {
 
 // recheck re-reads price and stock for everything in the cart, keyed by
 // variation id.
-func (c *squareClient) recheck(ctx context.Context, lines []cartLine) (map[string]freshItem, error) {
+func (c *squareClient) recheck(ctx context.Context, items []cartItem) (map[string]freshItem, error) {
 	out := map[string]freshItem{}
 	var ids []string
 	prices := map[string]int64{}
-	for _, l := range lines {
-		b := catalog[l.idx]
-		id, cents, err := c.lookup(ctx, b.ISBN)
+	for _, it := range items {
+		id, cents, err := c.lookup(ctx, it.isbn)
 		if err != nil {
 			return nil, err
 		}
@@ -332,17 +350,17 @@ func (c *squareClient) recheck(ctx context.Context, lines []cartLine) (map[strin
 // createLink builds the buyer's cart on Square and returns a hosted checkout.
 // Passing an order (rather than an ad hoc name and price) is what gets us
 // itemisation, tax, and inventory for free.
-func (c *squareClient) createLink(ctx context.Context, lines []cartLine, idempotency string) (checkout, map[string]freshItem, error) {
+func (c *squareClient) createLink(ctx context.Context, items []cartItem, idempotency string) (checkout, map[string]freshItem, error) {
 	// Stock and price were read when the shop started, which could have been
 	// days ago. Square charges the current catalog price and will sell past
 	// zero, so both are re-checked here: this is the last moment before someone
 	// is asked for money, and the only one where being wrong costs them.
-	fresh, err := c.recheck(ctx, lines)
+	fresh, err := c.recheck(ctx, items)
 	if err != nil {
 		return checkout{}, nil, err
 	}
 
-	items, err := verifyCartItems(lines, fresh)
+	lineItems, err := verifyCartItems(items, fresh)
 	if err != nil {
 		return checkout{}, fresh, err
 	}
@@ -351,7 +369,7 @@ func (c *squareClient) createLink(ctx context.Context, lines []cartLine, idempot
 		"idempotency_key": idempotency,
 		"order": map[string]any{
 			"location_id": c.locationID,
-			"line_items":  items,
+			"line_items":  lineItems,
 		},
 		"checkout_options": map[string]any{
 			"ask_for_shipping_address": true,

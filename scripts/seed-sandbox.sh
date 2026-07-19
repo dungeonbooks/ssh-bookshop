@@ -32,41 +32,47 @@ books=(
     "9781250380968|Saltcrop by Yume Kitasei (Hardcover)|3099"
 )
 
-objects=""
-for row in "${books[@]}"; do
-    IFS='|' read -r isbn title cents <<<"$row"
-    [ -n "$objects" ] && objects+=","
-    objects+=$(
-        cat <<JSON
-{
-  "type": "ITEM",
-  "id": "#item_$isbn",
-  "present_at_all_locations": true,
-  "item_data": {
-    "name": "$title",
-    "variations": [{
-      "type": "ITEM_VARIATION",
-      "id": "#var_$isbn",
-      "present_at_all_locations": true,
-      "item_variation_data": {
-        "item_id": "#item_$isbn",
-        "name": "Regular",
-        "pricing_type": "FIXED_PRICING",
-        "upc": "$isbn",
-        "price_money": {"amount": $cents, "currency": "USD"}
-      }
-    }]
-  }
-}
-JSON
-    )
-done
+# Built by python so a quote or backslash in a title can't produce broken JSON.
+payload=$(printf '%s\n' "${books[@]}" | python3 -c '
+import json, sys, time
+
+objects = []
+for row in sys.stdin.read().splitlines():
+    if not row.strip():
+        continue
+    isbn, title, cents = row.split("|")
+    objects.append({
+        "type": "ITEM",
+        "id": f"#item_{isbn}",
+        "present_at_all_locations": True,
+        "item_data": {
+            "name": title,
+            "variations": [{
+                "type": "ITEM_VARIATION",
+                "id": f"#var_{isbn}",
+                "present_at_all_locations": True,
+                "item_variation_data": {
+                    "item_id": f"#item_{isbn}",
+                    "name": "Regular",
+                    "pricing_type": "FIXED_PRICING",
+                    "upc": isbn,
+                    "price_money": {"amount": int(cents), "currency": "USD"},
+                },
+            }],
+        },
+    })
+
+print(json.dumps({
+    "idempotency_key": f"seed-{int(time.time())}",
+    "batches": [{"objects": objects}],
+}))
+')
 
 curl -sS -X POST "https://$host/v2/catalog/batch-upsert" \
     -H "Authorization: Bearer $SQUARE_ACCESS_TOKEN" \
     -H "Content-Type: application/json" \
     -H "Square-Version: 2025-01-23" \
-    -d "{\"idempotency_key\": \"seed-$(date +%s)\", \"batches\": [{\"objects\": [$objects]}]}" |
+    -d "$payload" |
     python3 -c "
 import json, sys
 d = json.load(sys.stdin)

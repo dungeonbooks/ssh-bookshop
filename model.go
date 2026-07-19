@@ -260,7 +260,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.step = stepPay
 				m.checkoutErr = nil
 				m.checkout = checkout{}
-				return m, tea.Batch(startCheckout(m.cart, newIdempotencyKey()), blinkTick())
+				return m, tea.Batch(startCheckout(m.snapshotCart(), newIdempotencyKey()), blinkTick())
 			case m.tab == tabCart && m.step == stepDone:
 				m.step = stepThanks
 			case m.tab == tabCart && m.step == stepThanks:
@@ -559,10 +559,8 @@ func (m model) navPlain(cw int) string {
 		}
 		return active.Render(hot) + " " + st.Render(label)
 	}
-	cartLabel := "cart"
-	if n := m.cartCount(); n > 0 {
-		cartLabel = fmt.Sprintf("cart [%d]", n)
-	}
+	// Same shape as the boxed nav, so the two layouts agree.
+	cartLabel := fmt.Sprintf("cart %s [%d]", usd(m.cartTotal()), m.cartCount())
 	sep := navSep.Render(" · ")
 	line := seg("s", "shop", m.tab == tabShop) + sep +
 		seg("a", "acct", m.tab == tabAccount) + sep +
@@ -680,11 +678,14 @@ func (m model) action(w int, b Book) string {
 	// available action does. Its background starts flush with the title and
 	// description above, so the accent block lines up with the column.
 	chip := lipgloss.NewStyle().Background(accent).Foreground(white)
-	tip := dValue.Render("enter") + dBody.Render(" to buy on bookshop.org")
+	tip := dValue.Render("enter") + dBody.Render(" to copy")
 	if m.copied {
 		tip = dBody.Render("link copied to clipboard")
 	}
-	return chip.Render(" sold out ") + "  " + tip
+	// The URL is printed, not just copied: OSC 52 is not universal, and a
+	// terminal without it would otherwise leave no way to reach the link.
+	return chip.Render(" sold out ") + "  " + tip + "\n" +
+		hyperlink(b.BuyURL(), dLink.Render(truncate(b.BuyURL(), w)))
 }
 
 // breadcrumb is the checkout step indicator: only the current step is bright,
