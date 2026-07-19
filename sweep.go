@@ -81,11 +81,11 @@ func (c *squareClient) sweepLinks(ctx context.Context, now time.Time) (deleted, 
 // sweepShelf is the -sweep command: run the sweep once and report.
 func sweepShelf() {
 	if _, err := loadShop(catalog); err != nil {
+		// A failed price lookup says nothing about whether links can be swept.
 		fmt.Println("square:", err)
-		return
 	}
 	if sq == nil {
-		fmt.Println("square: no client")
+		fmt.Println("square: unavailable, nothing swept")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

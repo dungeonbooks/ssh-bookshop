@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,11 @@ import (
 const (
 	squareVersion = "2025-01-23"
 	squareTimeout = 10 * time.Second
+	// Boot blocks on this, so it is a fixed ceiling rather than one that grows
+	// with the shelf. Lookups run concurrently, capped so a bigger shelf costs
+	// round trips rather than a longer outage.
+	bootTimeout     = 20 * time.Second
+	bootConcurrency = 4
 )
 
 type squareClient struct {
@@ -237,33 +243,85 @@ func loadShop(books []Book) (priced int, err error) {
 		return 0, fmt.Errorf("SQUARE_ACCESS_TOKEN not set")
 	}
 	c := &squareClient{token: token}
-	ctx, cancel := context.WithTimeout(context.Background(), squareTimeout*time.Duration(len(books)+1))
+	ctx, cancel := context.WithTimeout(context.Background(), bootTimeout)
 	defer cancel()
 
+	// sq is set whenever the client is usable, which is not the same as the load
+	// having gone perfectly. Callers should check sq rather than treat any error
+	// as fatal: a partly priced shelf still browses and still sells what priced.
+	priced, err = c.loadInto(ctx, books)
+	if err == nil || priced > 0 {
+		sq = c
+	}
+	return priced, err
+}
+
+// loadInto prices and stocks books from Square. Split from loadShop so tests
+// can supply a client pointed somewhere other than the real API.
+func (c *squareClient) loadInto(ctx context.Context, books []Book) (priced int, err error) {
 	loc, err := c.activeLocation(ctx)
 	if err != nil {
 		return 0, err
 	}
 	c.locationID = loc
 
+	// One lookup per book, concurrently: sequentially this was the whole of the
+	// boot delay, and the shop cannot accept a connection until it returns.
+	type found struct {
+		id    string
+		cents int64
+		err   error
+	}
+	results := make([]found, len(books))
+	sem := make(chan struct{}, bootConcurrency)
+	var wg sync.WaitGroup
+	for i := range books {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// Wait for a slot or for the boot deadline, whichever comes first,
+			// so a cancelled context is not queued behind the whole shelf.
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				results[i] = found{err: ctx.Err()}
+				return
+			}
+			id, cents, err := c.lookup(ctx, books[i].ISBN)
+			results[i] = found{id, cents, err} // own index, so no lock
+		}(i)
+	}
+	wg.Wait()
+
 	var ids []string
 	for i := range books {
-		id, cents, err := c.lookup(ctx, books[i].ISBN)
-		if err != nil {
-			return priced, err
+		if results[i].err != nil {
+			// Report the first failure but keep what did come back: a partly
+			// priced shelf still browses.
+			if err == nil {
+				err = results[i].err
+			}
+			continue
 		}
-		if cents > 0 {
-			books[i].VariationID, books[i].Cents = id, cents
-			ids = append(ids, id)
+		if results[i].cents > 0 {
+			books[i].VariationID, books[i].Cents = results[i].id, results[i].cents
+			ids = append(ids, results[i].id)
 			priced++
 		}
 	}
-
 	// Being in the catalog is not the same as being on the shelf. A book Square
 	// knows about but has none of is sold out, and selling it would mean taking
 	// money for something we can't hand over.
-	qty, untracked, err := c.stock(ctx, ids)
-	if err != nil {
+	//
+	// Runs even when a lookup failed: skipping it would leave the books that did
+	// price with Sellable false, so the shelf would show prices and refuse to
+	// sell any of them, which is worse than either outcome on its own.
+	qty, untracked, stockErr := c.stock(ctx, ids)
+	if stockErr != nil {
+		if err == nil {
+			err = stockErr
+		}
 		return priced, err
 	}
 	for i := range books {
@@ -274,9 +332,7 @@ func loadShop(books []Book) (priced int, err error) {
 		books[i].Stock, books[i].Tracked = qty[id], !untracked[id]
 		books[i].Sellable = sellable(untracked[id], qty[id])
 	}
-
-	sq = c
-	return priced, nil
+	return priced, err
 }
 
 // --- checkout --------------------------------------------------------------
