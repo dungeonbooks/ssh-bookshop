@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"sync"
 
 	"golang.org/x/time/rate"
@@ -46,8 +47,14 @@ type keyedLimiter struct {
 }
 
 func connectionLimiter() ratelimiter.RateLimiter {
-	// Only errors on a non-positive size, which connCache is not.
-	cache, _ := lru.New[string, *rate.Limiter](connCache)
+	cache, err := lru.New[string, *rate.Limiter](connCache)
+	if err != nil {
+		// Only reachable by editing connCache to a non-positive value, which is
+		// a programming error rather than a runtime condition. Failing here says
+		// so; swallowing it returns a nil cache that panics on the first
+		// connection instead, a long way from the cause.
+		panic("connection limiter cache: " + err.Error())
+	}
 	return &keyedLimiter{
 		cache: cache,
 		shop:  rate.NewLimiter(shopRate, shopBurst),
@@ -93,5 +100,18 @@ func sessionKey(s ssh.Session) string {
 	if pk := s.PublicKey(); pk != nil {
 		return gossh.FingerprintSHA256(pk)
 	}
-	return s.RemoteAddr().String()
+	return addrKey(s.RemoteAddr())
+}
+
+// addrKey reduces an address to the part that identifies a visitor. The port
+// has to go: it is ephemeral, so keying on it would hand every reconnect a
+// fresh bucket, and worse, churn a thousand single-use entries through the LRU
+// and evict the fingerprints of everyone actually shopping.
+func addrKey(a net.Addr) string {
+	if tcp, ok := a.(*net.TCPAddr); ok {
+		return tcp.IP.String()
+	}
+	// Not TCP, so there may be no port to strip. Better a key that is too
+	// specific than none at all.
+	return a.String()
 }

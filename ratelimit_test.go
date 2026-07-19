@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net"
+	"strings"
 	"testing"
 
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -61,5 +63,23 @@ func TestShopCeilingBoundsKeyRotation(t *testing.T) {
 	}
 	if allowed == 0 {
 		t.Error("the ceiling refused everything")
+	}
+}
+
+// The fallback key must not carry the ephemeral port: a per-connection key is
+// no limit at all, and a thousand of them evict every real fingerprint from the
+// LRU on the way past.
+func TestAddrKeyDropsThePort(t *testing.T) {
+	ip := net.ParseIP("203.0.113.7")
+	first := addrKey(&net.TCPAddr{IP: ip, Port: 54321})
+	second := addrKey(&net.TCPAddr{IP: ip, Port: 54322})
+	if first != second {
+		t.Errorf("two connections from one IP keyed differently: %q vs %q", first, second)
+	}
+	if strings.Contains(first, "54321") {
+		t.Errorf("addrKey = %q, want no port in it", first)
+	}
+	if first != "203.0.113.7" {
+		t.Errorf("addrKey = %q, want the bare IP", first)
 	}
 }
