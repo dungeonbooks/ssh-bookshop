@@ -32,12 +32,18 @@ func (m model) acctPages(w int) []acctPage {
 func (m model) accountMenu(pages []acctPage, w int) string {
 	var sb strings.Builder
 	for i, p := range pages {
+		// One budget for both rows, computed once. The leading space is drawn
+		// inside the highlight, so the title gets two less than the column: one
+		// for the space, one for the style width. Selected and unselected rows
+		// have to agree, and the surest way is for there to be one number.
+		//
+		// An over-long row does not clip here, it wraps, taking the whole menu
+		// a line further down with it.
+		row := " " + truncate(p.title, w-2)
 		if i == m.acct {
-			// The leading space is part of the highlight, so the title budget is
-			// two less than the column: one for it, one for the style width.
-			sb.WriteString(selItem.Width(w - 1).Render(" " + truncate(p.title, w-2)))
+			sb.WriteString(selItem.Width(w - 1).Render(row))
 		} else {
-			sb.WriteString(romItem.Render(" " + p.title))
+			sb.WriteString(romItem.Render(row))
 		}
 		sb.WriteByte('\n')
 	}
