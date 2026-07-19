@@ -25,9 +25,15 @@ jobs:
 
       - name: gofmt
         run: |
-          unformatted=$(gofmt -l .)
+          # Assigning from a substitution swallows the exit status, so a broken
+          # gofmt would read as "nothing unformatted". Fail on it explicitly.
+          if ! unformatted="$(gofmt -l .)"; then
+            echo "gofmt failed to run"
+            exit 1
+          fi
           if [ -n "$unformatted" ]; then
-            echo "not gofmt'd:"; echo "$unformatted"
+            echo "not gofmt'd:"
+            echo "$unformatted"
             exit 1
           fi
 
@@ -39,5 +45,7 @@ jobs:
 
       # -race is the point of this workflow: checkout runs off the UI goroutine,
       # and the shop takes money, so a data race is not a cosmetic problem.
+      # -count=1 defeats the test cache: a cached pass proves nothing about a
+      # race, which is exactly the kind of failure that only shows up sometimes.
       - name: test
-        run: go test -race ./...
+        run: go test -count=1 -race ./...
