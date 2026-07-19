@@ -26,6 +26,7 @@ type Book struct {
 	Month       string // book club pick month, "2026-07"
 	Format      string // "hardcover", "paperback" — the edition we stock
 	Pages       int    // 0 when unknown
+	WeightGrams int    // Ingram shipping weight via the catalog db; 0 when unknown
 	Cents       int64  // price from Square, 0 when we don't carry it
 	VariationID string // Square catalog variation, needed to build an order
 	Stock       int    // on-hand at the shop; can go negative when oversold

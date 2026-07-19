@@ -110,6 +110,7 @@ type model struct {
 	phase       int  // splash blink phases elapsed
 	copied      bool // the current book's link was just copied
 	fingerprint string
+	fulfil      fulfilment // pickup or ship, chosen before the link is made
 	sess        sessionInfo
 	// fresh is price and stock re-read from Square during this session's
 	// checkout. Kept here rather than written back to the package catalog,
@@ -231,8 +232,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.acct--
 				}
 			case tabCart:
-				if m.step == stepCart && m.cartCursor > 0 {
+				switch {
+				case m.step == stepCart && m.cartCursor > 0:
 					m.cartCursor--
+				case m.step == stepFulfil:
+					m.fulfil = fulfilPickup
 				}
 			}
 		case "down", "j":
@@ -247,8 +251,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.acct++
 				}
 			case tabCart:
-				if m.step == stepCart && m.cartCursor < len(m.cart)-1 {
+				switch {
+				case m.step == stepCart && m.cartCursor < len(m.cart)-1:
 					m.cartCursor++
+				case m.step == stepFulfil:
+					m.fulfil = fulfilShip
 				}
 			}
 		case "+", "=":
@@ -280,10 +287,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					tea.Tick(copiedFor, func(time.Time) tea.Msg { return copiedMsg{} }),
 				)
 			case m.tab == tabCart && m.step == stepCart && len(m.cart) > 0:
+				m.step = stepFulfil
+			case m.tab == tabCart && m.step == stepFulfil:
 				m.step = stepPay
 				m.checkoutErr = nil
 				m.checkout = checkout{}
-				return m, tea.Batch(startCheckout(m.snapshotCart(), newIdempotencyKey()), blinkTick())
+				ship, _ := m.shipping()
+				if m.fulfil == fulfilPickup {
+					ship = 0
+				}
+				return m, tea.Batch(
+					startCheckout(m.snapshotCart(), m.fulfil, ship, newIdempotencyKey()),
+					blinkTick(),
+				)
 			case m.tab == tabCart && m.step == stepDone:
 				m.step = stepThanks
 			case m.tab == tabCart && m.step == stepThanks:
@@ -722,7 +738,7 @@ func (m model) breadcrumb() string {
 	steps := []struct {
 		label string
 		at    step
-	}{{"cart", stepCart}, {"checkout", stepPay}}
+	}{{"cart", stepCart}, {"delivery", stepFulfil}, {"checkout", stepPay}}
 	parts := make([]string, 0, len(steps))
 	for _, s := range steps {
 		if s.at == m.step {
@@ -736,6 +752,8 @@ func (m model) breadcrumb() string {
 
 func (m model) cartView(w, h int) string {
 	switch m.step {
+	case stepFulfil:
+		return m.fulfilView(w)
 	case stepPay:
 		return m.payView(w, h)
 	case stepDone:
@@ -805,6 +823,47 @@ func (m model) cartRow(w int, i int, l cartLine) string {
 		rule("└", "┘") + "\n"
 }
 
+// shipping prices the cart at Media Mail, or falls back to the flat rate when a
+// book has no recorded weight.
+func (m model) shipping() (cents int64, exact bool) {
+	return shippingFor(m.cart, func(i int) int { return m.book(i).WeightGrams })
+}
+
+// fulfilView is the choice Square's hosted page cannot offer, so it has to be
+// made before the order exists.
+func (m model) fulfilView(w int) string {
+	var sb strings.Builder
+	fmt.Fprintln(&sb, m.breadcrumb())
+	fmt.Fprintln(&sb)
+
+	opt := func(sel bool, label, detail string) string {
+		marker, st := "  ", romItem
+		if sel {
+			marker, st = dValue.Render("> "), dValue
+		}
+		return " " + marker + st.Render(label) + "\n     " + dBody.Render(detail)
+	}
+	fmt.Fprintln(&sb, opt(m.fulfil == fulfilPickup, "pick up at the shop",
+		"115 Brunswick St, Jersey City. We'll email when it's ready."))
+	fmt.Fprintln(&sb)
+	ship, exact := m.shipping()
+	note := fmt.Sprintf("%s, US only. 6-12 business days.", usd(ship))
+	if !exact {
+		note = fmt.Sprintf("%s flat, US only. 6-12 business days.", usd(ship))
+	}
+	fmt.Fprintln(&sb, opt(m.fulfil == fulfilShip, "ship it to me", note))
+	fmt.Fprintln(&sb)
+
+	total := m.cartTotal()
+	if m.fulfil == fulfilShip {
+		ship, _ := m.shipping()
+		fmt.Fprintf(&sb, " %s\n", dBody.Render(fmt.Sprintf("books %s  +  shipping %s", usd(total), usd(ship))))
+		total += ship
+	}
+	fmt.Fprintf(&sb, " %s %s\n", dLabel.Render("total"), dValue.Render(usd(total)))
+	return sb.String()
+}
+
 // payView hands the card details to Square: a QR of the hosted checkout, the
 // URL to copy, and a quiet note that we're watching for the payment.
 func (m model) payView(w, h int) string {
@@ -867,7 +926,11 @@ func (m model) thanksView(w int) string {
 	var sb strings.Builder
 	fmt.Fprintln(&sb, para.Render("Thank you for ordering from Dungeon Books."))
 	fmt.Fprintln(&sb)
-	fmt.Fprintln(&sb, para.Render("Your books are set aside at the shop in Jersey City. Square has emailed you a receipt, and we'll be in touch about pickup or shipping."))
+	if m.fulfil == fulfilShip {
+		fmt.Fprintln(&sb, para.Render("Your books ship from Jersey City within 3-5 business days, and usually arrive 3-7 after that. Square has emailed you a receipt, and we'll send a tracking number once they're on their way."))
+	} else {
+		fmt.Fprintln(&sb, para.Render("Your books are set aside at the shop in Jersey City, 115 Brunswick St. Square has emailed you a receipt, and we'll email again once they're ready to collect."))
+	}
 	fmt.Fprintln(&sb)
 	fmt.Fprintln(&sb, para.Render("If you're reading the book club pick, come argue about it with us at the end of the month."))
 	fmt.Fprintln(&sb)
@@ -991,6 +1054,8 @@ func (m model) footer(cw int) string {
 		keys = fk("↑/↓", "navigate") + fk("q", "quit")
 	case m.step == stepCart && len(m.cart) > 0:
 		keys = fk("esc", "back") + fk("↑/↓", "items") + fk("+/-", "qty") + fk("enter", "checkout")
+	case m.step == stepFulfil:
+		keys = fk("esc", "back") + fk("↑/↓", "choose") + fk("enter", "continue")
 	case m.step == stepPay:
 		keys = fk("esc", "back") + fk("q", "quit")
 	case m.step == stepDone, m.step == stepThanks:

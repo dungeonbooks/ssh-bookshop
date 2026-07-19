@@ -1,0 +1,84 @@
+package main
+
+import "testing"
+
+// TestMediaMail pins the rate against USPS: $4.13 for the first pound, $0.71 for
+// each additional, weight rounded up to the whole pound, and the charge rounded
+// up to the whole dollar so the shop shows no decimals.
+func TestMediaMail(t *testing.T) {
+	for _, tc := range []struct {
+		grams int
+		want  int64
+	}{
+		// Postage rounded up to the dollar: 4.13 -> 5, 4.84 -> 5, 5.55 -> 6.
+		// The band edges sit on the real pound (453.59237g), not on 454: 454g is
+		// already 1.0009lb and so bills as two.
+		{1, 500},     // a fraction of a pound still pays for one
+		{453, 500},   // a hair under the pound, still one band
+		{454, 500},   // over it, so two bands, but 4.84 -> 5 hides the change
+		{908, 600},   // 2.0018lb bills as three, 5.55 -> 6
+		{909, 600},   // three
+		{4540, 1200}, // 10.009lb bills as eleven: 11.23 -> 12
+	} {
+		if got := mediaMail(tc.grams); got != tc.want {
+			t.Errorf("mediaMail(%dg) = %d, want %d", tc.grams, got, tc.want)
+		}
+	}
+}
+
+func TestShippingForCart(t *testing.T) {
+	// Real Ingram weights: Daughter of Crows and Sublimation.
+	weights := map[int]int{0: 553, 1: 567, 2: 0} // book 2 has no Ingram data yet
+
+	t.Run("one book", func(t *testing.T) {
+		got, exact := shippingFor([]cartLine{{idx: 0, qty: 1}}, func(i int) int { return weights[i] })
+		if !exact {
+			t.Fatal("exact = false, want a computed rate")
+		}
+		if want := mediaMail(553 + packagingGrams); got != want {
+			t.Errorf("got %d, want %d", got, want)
+		}
+	})
+
+	t.Run("quantity counts", func(t *testing.T) {
+		got, _ := shippingFor([]cartLine{{idx: 0, qty: 3}}, func(i int) int { return weights[i] })
+		if want := mediaMail(553*3 + packagingGrams); got != want {
+			t.Errorf("got %d, want %d: quantity is not being multiplied", got, want)
+		}
+	})
+
+	// The case that decides whether we can trust the number at all.
+	t.Run("a missing weight falls back to flat", func(t *testing.T) {
+		got, exact := shippingFor([]cartLine{{idx: 0, qty: 1}, {idx: 2, qty: 1}}, func(i int) int { return weights[i] })
+		if exact {
+			t.Error("exact = true, but a book had no weight")
+		}
+		if got != flatShippingCents {
+			t.Errorf("got %d, want the flat rate %d", got, flatShippingCents)
+		}
+	})
+
+	t.Run("empty cart still pays for the parcel", func(t *testing.T) {
+		got, exact := shippingFor(nil, func(int) int { return 0 })
+		if !exact || got != mediaMail(packagingGrams) {
+			t.Errorf("got %d exact=%v", got, exact)
+		}
+	})
+}
+
+// TestShelfWeightsPresent guards the shelf: a book without its Ingram weight
+// drops the whole cart to the flat rate, so losing one is a silent pricing
+// regression. Every book carries a weight today, which is what makes this a
+// failure rather than the reminder it started as. A skip would not catch it.
+func TestShelfWeightsPresent(t *testing.T) {
+	var missing []string
+	for _, b := range catalog {
+		if b.WeightGrams <= 0 {
+			missing = append(missing, b.ISBN)
+		}
+	}
+	if len(missing) > 0 {
+		t.Errorf("%d of %d books have no WeightGrams, so shipping falls back to flat: %v",
+			len(missing), len(catalog), missing)
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -220,7 +221,7 @@ func TestCreateLinkCapturesTheLinkID(t *testing.T) {
 	})
 	items := []cartItem{{isbn: "1", variationID: "VAR1", title: "A Book", cents: 1000, qty: 1}}
 
-	out, _, err := c.createLink(context.Background(), items, "IDEM1")
+	out, _, err := c.createLink(context.Background(), items, fulfilPickup, 0, "IDEM1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,5 +428,72 @@ func TestLoadIntoKeepsWhatItGot(t *testing.T) {
 	// then refuses to sell it.
 	if !books[0].Sellable || books[0].Stock != 3 {
 		t.Errorf("known book = %+v, want stocked and sellable despite the other lookup failing", books[0])
+	}
+}
+
+// TestCreateLinkFulfilment pins what Square is told for each choice. Its hosted
+// page cannot offer pickup versus shipping, so the order has to carry it, and
+// getting this wrong means either charging for shipping on a pickup or asking a
+// local buyer for an address we never use.
+func TestCreateLinkFulfilment(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		how          fulfilment
+		wantType     string
+		wantAsksAddr bool
+		wantShipping bool
+	}{
+		{"pickup", fulfilPickup, "PICKUP", false, false},
+		{"ship", fulfilShip, "SHIPMENT", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var sent map[string]any
+			c := fakeSquare(t, map[string]func(http.ResponseWriter, *http.Request){
+				"/v2/inventory/counts/batch-retrieve": func(w http.ResponseWriter, r *http.Request) {
+					io.WriteString(w, `{"counts":[{"catalog_object_id":"VAR1","state":"IN_STOCK","quantity":"5"}]}`)
+				},
+				"/v2/catalog/search-catalog-items": func(w http.ResponseWriter, r *http.Request) {
+					io.WriteString(w, `{"items":[{"item_data":{"variations":[
+						{"id":"VAR1","item_variation_data":{"upc":"1","price_money":{"amount":2200,"currency":"USD"}}}
+					]}}]}`)
+				},
+				"/v2/online-checkout/payment-links": func(w http.ResponseWriter, r *http.Request) {
+					if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+						t.Errorf("decoding payment-link body: %v", err)
+					}
+					io.WriteString(w, `{"payment_link":{"id":"L1","url":"https://square.link/u/X","order_id":"O1"}}`)
+				},
+			})
+			items := []cartItem{{isbn: "1", variationID: "VAR1", title: "A Book", cents: 2200, qty: 1}}
+			if _, _, err := c.createLink(context.Background(), items, tc.how, 1234, "IDEM1"); err != nil {
+				t.Fatal(err)
+			}
+
+			order, _ := sent["order"].(map[string]any)
+			fulfils, _ := order["fulfillments"].([]any)
+			if len(fulfils) != 1 {
+				t.Fatalf("fulfillments = %v, want exactly one", fulfils)
+			}
+			if got := fulfils[0].(map[string]any)["type"]; got != tc.wantType {
+				t.Errorf("fulfillment type = %v, want %v", got, tc.wantType)
+			}
+
+			opts, _ := sent["checkout_options"].(map[string]any)
+			if _, asked := opts["ask_for_shipping_address"]; asked != tc.wantAsksAddr {
+				t.Errorf("ask_for_shipping_address present = %v, want %v", asked, tc.wantAsksAddr)
+			}
+
+			_, charged := order["service_charges"]
+			if charged != tc.wantShipping {
+				t.Errorf("service_charges present = %v, want %v", charged, tc.wantShipping)
+			}
+			if tc.wantShipping {
+				sc := order["service_charges"].([]any)[0].(map[string]any)
+				amt := sc["amount_money"].(map[string]any)["amount"]
+				if fmt.Sprint(amt) != "1234" {
+					t.Errorf("shipping = %v, want the quoted 1234", amt)
+				}
+			}
+		})
 	}
 }

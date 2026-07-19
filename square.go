@@ -425,7 +425,7 @@ func (c *squareClient) recheck(ctx context.Context, items []cartItem) (map[strin
 // createLink builds the buyer's cart on Square and returns a hosted checkout.
 // Passing an order (rather than an ad hoc name and price) is what gets us
 // itemisation, tax, and inventory for free.
-func (c *squareClient) createLink(ctx context.Context, items []cartItem, idempotency string) (checkout, map[string]freshItem, error) {
+func (c *squareClient) createLink(ctx context.Context, items []cartItem, how fulfilment, shipCents int64, idempotency string) (checkout, map[string]freshItem, error) {
 	// Stock and price were read when the shop started, which could have been
 	// days ago. Square charges the current catalog price and will sell past
 	// zero, so both are re-checked here: this is the last moment before someone
@@ -440,15 +440,37 @@ func (c *squareClient) createLink(ctx context.Context, items []cartItem, idempot
 		return checkout{}, fresh, err
 	}
 
+	order := map[string]any{
+		"location_id": c.locationID,
+		"line_items":  lineItems,
+	}
+	opts := map[string]any{}
+
+	// Square's hosted page cannot offer the choice, so the order says which it
+	// is and the page only collects what that needs.
+	if how == fulfilShip {
+		order["service_charges"] = []map[string]any{{
+			"name":              "Shipping",
+			"amount_money":      map[string]any{"amount": shipCents, "currency": "USD"},
+			"calculation_phase": "SUBTOTAL_PHASE",
+		}}
+		order["fulfillments"] = []map[string]any{{
+			"type":  "SHIPMENT",
+			"state": "PROPOSED",
+		}}
+		opts["ask_for_shipping_address"] = true
+	} else {
+		order["fulfillments"] = []map[string]any{{
+			"type":           "PICKUP",
+			"state":          "PROPOSED",
+			"pickup_details": map[string]any{"schedule_type": "ASAP", "note": "Collect at the shop"},
+		}}
+	}
+
 	body := map[string]any{
-		"idempotency_key": idempotency,
-		"order": map[string]any{
-			"location_id": c.locationID,
-			"line_items":  lineItems,
-		},
-		"checkout_options": map[string]any{
-			"ask_for_shipping_address": true,
-		},
+		"idempotency_key":  idempotency,
+		"order":            order,
+		"checkout_options": opts,
 	}
 
 	var out struct {
@@ -488,6 +510,12 @@ func (c *squareClient) paid(ctx context.Context, orderID string) (bool, error) {
 	return out.Order.State == "COMPLETED" || len(out.Order.Tenders) > 0, nil
 }
 
+// usd prints money the way terminal.shop does, without decimals it does not
+// need. Book prices come from Square and mostly carry cents, so those still
+// show them; shipping and a whole-dollar total do not.
 func usd(cents int64) string {
+	if cents%100 == 0 {
+		return fmt.Sprintf("$%d", cents/100)
+	}
 	return fmt.Sprintf("$%d.%02d", cents/100, cents%100)
 }
