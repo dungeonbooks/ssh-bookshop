@@ -7,7 +7,11 @@ const (
 	mediaMailFirstCents int64 = 413
 	mediaMailAddlCents  int64 = 71
 	packagingGrams            = 142 // mailer and padding, about 5oz
-	gramsPerPound             = 454
+
+	// A pound is 453.59237g, held in milligrams so the maths stays integer.
+	// Rounding 454 undercharges at the band edges: 908g is 2.0018lb, which USPS
+	// bills as three pounds while 454 makes it exactly two.
+	mgPerPound = 453592
 
 	// Charged when any book in the cart has no recorded weight. Guessing a
 	// weight means guessing a price, so fall back rather than invent one. Set
@@ -24,7 +28,7 @@ const (
 // terminal.shop prices everything. Rounding up rather than to nearest means the
 // charge never lands under the postage.
 func mediaMail(grams int) int64 {
-	pounds := int64((grams + gramsPerPound - 1) / gramsPerPound)
+	pounds := (int64(grams)*1000 + mgPerPound - 1) / mgPerPound
 	if pounds < 1 {
 		pounds = 1
 	}

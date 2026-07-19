@@ -11,12 +11,14 @@ func TestMediaMail(t *testing.T) {
 		want  int64
 	}{
 		// Postage rounded up to the dollar: 4.13 -> 5, 4.84 -> 5, 5.55 -> 6.
+		// The band edges sit on the real pound (453.59237g), not on 454: 454g is
+		// already 1.0009lb and so bills as two.
 		{1, 500},     // a fraction of a pound still pays for one
-		{454, 500},   // exactly a pound
-		{455, 500},   // a gram over costs a whole band, 4.84 -> 5
-		{908, 500},   // two pounds
-		{909, 600},   // three, 5.55 -> 6
-		{4540, 1100}, // ten pounds: 10.52 -> 11
+		{453, 500},   // a hair under the pound, still one band
+		{454, 500},   // over it, so two bands, but 4.84 -> 5 hides the change
+		{908, 600},   // 2.0018lb bills as three, 5.55 -> 6
+		{909, 600},   // three
+		{4540, 1200}, // 10.009lb bills as eleven: 11.23 -> 12
 	} {
 		if got := mediaMail(tc.grams); got != tc.want {
 			t.Errorf("mediaMail(%dg) = %d, want %d", tc.grams, got, tc.want)
@@ -64,8 +66,10 @@ func TestShippingForCart(t *testing.T) {
 	})
 }
 
-// TestShelfWeightsPresent is the reminder: until every book carries its Ingram
-// weight, real carts fall back to the flat rate.
+// TestShelfWeightsPresent guards the shelf: a book without its Ingram weight
+// drops the whole cart to the flat rate, so losing one is a silent pricing
+// regression. Every book carries a weight today, which is what makes this a
+// failure rather than the reminder it started as. A skip would not catch it.
 func TestShelfWeightsPresent(t *testing.T) {
 	var missing []string
 	for _, b := range catalog {
@@ -74,7 +78,7 @@ func TestShelfWeightsPresent(t *testing.T) {
 		}
 	}
 	if len(missing) > 0 {
-		t.Skipf("%d of %d books have no WeightGrams yet, so shipping falls back to flat: %v",
+		t.Errorf("%d of %d books have no WeightGrams, so shipping falls back to flat: %v",
 			len(missing), len(catalog), missing)
 	}
 }
