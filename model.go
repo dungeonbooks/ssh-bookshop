@@ -677,7 +677,7 @@ func (m model) action(w int, b Book) string {
 	// The chip states the shelf status; the hint beside it says what the one
 	// available action does. Its background starts flush with the title and
 	// description above, so the accent block lines up with the column.
-	chip := lipgloss.NewStyle().Background(accent).Foreground(white)
+	chip := lipgloss.NewStyle().Background(accent).Foreground(ink)
 	tip := dValue.Render("enter") + dBody.Render(" to copy")
 	if m.copied {
 		tip = dBody.Render("link copied to clipboard")
