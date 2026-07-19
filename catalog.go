@@ -14,19 +14,14 @@ func affiliate(isbn string) string {
 	return "https://bookshop.org/a/" + AffiliateID + "/" + isbn
 }
 
-// Book is one catalog entry. Affiliate model: no inventory, no payment — "buy"
-// hands off to Bookshop.org, except books we stock ourselves, which carry their
-// own dungeonbooks.com URL. Free titles are openly licensed and read directly.
+// Book is one catalog entry. Stock and price come from Square for what we
+// carry; anything we don't falls back to an affiliate link at Bookshop.org.
 type Book struct {
 	ISBN        string
 	BookTitle   string
 	Author      string
-	Year        int
-	Publisher   string
 	Collection  string
 	Blurb       string
-	Free        bool
-	DownloadURL string
 	URL         string // overrides the affiliate link when we sell it ourselves
 	Month       string // book club pick month, "2026-07"
 	Format      string // "hardcover", "paperback" — the edition we stock
@@ -83,14 +78,6 @@ func (b Book) BuyURL() string {
 		return b.URL
 	}
 	return affiliate(b.ISBN)
-}
-
-// BuyLabel names the destination so the link is never a surprise.
-func (b Book) BuyLabel() string {
-	if strings.Contains(b.BuyURL(), "dungeonbooks.com") {
-		return "buy at dungeonbooks.com:"
-	}
-	return "buy on bookshop.org:"
 }
 
 const (

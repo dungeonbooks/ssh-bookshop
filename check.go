@@ -53,6 +53,6 @@ func checkShelf(extra []string) {
 			continue
 		}
 		fmt.Printf("\n%s: %s stock=%d untracked=%v -> sellable=%v\n",
-			isbn, usd(cents), qty[id], untracked[id], untracked[id] || qty[id] > 0)
+			isbn, usd(cents), qty[id], untracked[id], sellable(untracked[id], qty[id]))
 	}
 }
