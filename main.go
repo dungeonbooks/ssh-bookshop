@@ -23,6 +23,15 @@ import (
 )
 
 func main() {
+	loadDotEnv(".env")
+
+	// -check reports what Square says about the shelf and exits. Read-only, so
+	// it is safe to point at production.
+	if len(os.Args) > 1 && os.Args[1] == "-check" {
+		checkShelf(os.Args[2:])
+		return
+	}
+
 	host := env("HOST", "0.0.0.0")
 	port := env("PORT", "23234")
 
@@ -35,10 +44,11 @@ func main() {
 
 	// Prices come from the shop's Square catalog. A failure here is survivable:
 	// the shelf still opens, just without prices.
-	if found, err := loadPrices(catalog); err != nil {
-		log.Warn("square prices unavailable", "err", err, "priced", found)
+	if found, err := loadShop(catalog); err != nil {
+		log.Warn("square unavailable, browsing only", "err", err, "priced", found)
 	} else {
-		log.Info("square prices loaded", "priced", found, "of", len(catalog))
+		log.Info("square ready", "env", env("SQUARE_ENVIRONMENT", "production"),
+			"priced", found, "of", len(catalog), "location", sq.locationID)
 	}
 
 	s, err := wish.NewServer(

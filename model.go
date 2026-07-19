@@ -25,20 +25,20 @@ var (
 
 var (
 	boxDim   = lipgloss.NewStyle().Foreground(dim)
-	hotkey   = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	active   = lipgloss.NewStyle().Foreground(white).Bold(true)
+	hotkey   = lipgloss.NewStyle().Foreground(white)
+	active   = lipgloss.NewStyle().Foreground(white).Bold(true) // footer keys only
 	inactive = lipgloss.NewStyle().Foreground(gray)
 
 	secHead = lipgloss.NewStyle().Foreground(white)
-	// selItem is the single focused element: an accent block, like terminal.shop.
-	// Dark text on it, not bright: see ink.
+	// selItem is the single focused element: an accent block, like
+	// terminal.shop's highlighted row. Dark text on it, not bright: see ink.
 	selItem = lipgloss.NewStyle().Background(accent).Foreground(ink)
 	romItem = lipgloss.NewStyle().Foreground(gray)
 	navSep  = lipgloss.NewStyle().Foreground(dim)
 
 	logoStyle = lipgloss.NewStyle().Foreground(accent).Bold(true)
 
-	dTitle = lipgloss.NewStyle().Foreground(white).Bold(true)
+	dTitle = lipgloss.NewStyle().Foreground(white)
 	dLabel = lipgloss.NewStyle().Foreground(gray)
 	dValue = lipgloss.NewStyle().Foreground(white)
 	dLink  = lipgloss.NewStyle().Foreground(accent).Underline(true)
@@ -91,7 +91,12 @@ type model struct {
 	tab         tab
 	cursor      int // index into catalog (shop)
 	acct        int // index into account sub-pages
-	cart        []Book
+	cart        []cartLine
+	placed      []cartLine // what was bought, kept for the receipt screens
+	cartCursor  int
+	step        step
+	checkout    checkout
+	checkoutErr error
 	width       int
 	height      int
 	ready       bool // false while the splash shows
@@ -112,6 +117,12 @@ func newModel(width, height int, fingerprint string) model {
 }
 
 type blinkMsg struct{}
+
+// copiedMsg clears the "link copied" confirmation so the tip returns to telling
+// you what enter does.
+type copiedMsg struct{}
+
+const copiedFor = 2 * time.Second
 
 // blinkPeriod is one on or off phase, so two full blinks take 4 of them.
 const (
@@ -134,14 +145,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 
+	case copiedMsg:
+		m.copied = false
+		return m, nil
+
 	case blinkMsg:
-		m.phase++
 		m.cursorOn = !m.cursorOn
-		if m.phase >= blinkPhases {
-			m.ready = true
-			return m, nil
+		if !m.ready {
+			m.phase++
+			if m.phase >= blinkPhases {
+				m.ready = true
+				return m, nil
+			}
+			return m, blinkTick()
 		}
-		return m, blinkTick()
+		// Keep blinking only while something is actually pending, so an idle
+		// shop isn't redrawing itself forever.
+		if m.tab == tabCart && m.step == stepPay {
+			return m, blinkTick()
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		// any key skips the splash
@@ -165,6 +188,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tab = tabAccount
 		case "c":
 			m.tab = tabCart
+		case "esc":
+			// Back out of checkout one step at a time; from the cart list, out
+			// to the shop.
+			switch {
+			case m.tab == tabCart && m.step != stepCart:
+				m.step = stepCart
+				m.checkoutErr = nil
+			case m.tab == tabCart:
+				m.tab = tabShop
+			}
 		case "up", "k":
 			switch m.tab {
 			case tabShop:
@@ -175,6 +208,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tabAccount:
 				if m.acct > 0 {
 					m.acct--
+				}
+			case tabCart:
+				if m.step == stepCart && m.cartCursor > 0 {
+					m.cartCursor--
 				}
 			}
 		case "down", "j":
@@ -188,14 +225,84 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.acct < acctPageCount-1 {
 					m.acct++
 				}
+			case tabCart:
+				if m.step == stepCart && m.cartCursor < len(m.cart)-1 {
+					m.cartCursor++
+				}
+			}
+		case "+", "=":
+			switch m.tab {
+			case tabShop:
+				m.addToCart(m.cursor)
+			case tabCart:
+				if m.step == stepCart && m.cartCursor < len(m.cart) {
+					m.addToCart(m.cart[m.cartCursor].idx)
+				}
+			}
+		case "-", "_":
+			switch m.tab {
+			case tabShop:
+				m.removeFromCart(m.cursor)
+			case tabCart:
+				if m.step == stepCart && m.cartCursor < len(m.cart) {
+					m.removeFromCart(m.cart[m.cartCursor].idx)
+				}
 			}
 		case "enter":
-			// A server can't open a browser on someone else's machine, so
-			// "open the link" means putting it on their clipboard (OSC 52)
-			// and leaving it clickable (OSC 8) where that is supported.
-			if m.tab == tabShop {
+			switch {
+			case m.tab == tabShop:
+				// A server can't open a browser on someone else's machine, so
+				// "open the link" means putting it on their clipboard (OSC 52)
+				// and leaving it clickable (OSC 8) where that is supported.
 				m.copied = true
+				return m, tea.Tick(copiedFor, func(time.Time) tea.Msg { return copiedMsg{} })
+			case m.tab == tabCart && m.step == stepCart && len(m.cart) > 0:
+				m.step = stepPay
+				m.checkoutErr = nil
+				m.checkout = checkout{}
+				return m, tea.Batch(startCheckout(m.snapshotCart(), newIdempotencyKey()), blinkTick())
+			case m.tab == tabCart && m.step == stepDone:
+				m.step = stepThanks
+			case m.tab == tabCart && m.step == stepThanks:
+				// Order's done: forget it and go back to the shelf.
+				m.placed, m.cart, m.cartCursor, m.step = nil, nil, 0, stepCart
+				m.checkout = checkout{}
+				m.tab = tabShop
 			}
+		}
+
+	case checkoutMsg:
+		// Apply whatever Square just told us, so the shelf stops lying and a
+		// retry has a chance of succeeding.
+		for i := range catalog {
+			if f, ok := msg.fresh[catalog[i].VariationID]; ok {
+				catalog[i].Cents, catalog[i].Stock = f.cents, f.stock
+				catalog[i].Tracked, catalog[i].Sellable = !f.untracked, f.sellable
+			}
+		}
+		if msg.err != nil {
+			m.checkoutErr = msg.err
+			return m, nil
+		}
+		m.checkout = msg.out
+		return m, pollPaid(msg.out.OrderID)
+
+	case paidMsg:
+		if msg.err != nil {
+			// A failed poll is not a failed order. Keep waiting rather than
+			// telling someone their payment did not go through.
+			return m, pollPaid(m.checkout.OrderID)
+		}
+		if msg.paid {
+			// Empty the cart the moment Square confirms, so the nav total goes
+			// to zero on the order screen rather than lingering behind a letter
+			// nobody has dismissed yet. The lines are kept for the receipt.
+			m.placed, m.cart, m.cartCursor = m.cart, nil, 0
+			m.step = stepDone
+			return m, nil
+		}
+		if m.step == stepPay {
+			return m, pollPaid(m.checkout.OrderID)
 		}
 	}
 	return m, nil
@@ -224,6 +331,13 @@ func (m model) dims() (cw, rightW, bodyH int, twoCol bool) {
 		rightW = cw
 	}
 	bodyH = bodyMax
+	// The QR screen is a single centred block, and the code is tall: a sandbox
+	// payment URL is 8 characters longer than a production one, which is enough
+	// to push it past the standard body height. Let that one screen use the
+	// whole window rather than dropping the code.
+	if m.tab == tabCart && m.step == stepPay {
+		bodyH = m.height
+	}
 	// reserve one blank row at the bottom so the footer never sits on the last
 	// line when compressed (terminal.shop caps its block at height-1)
 	if avail := m.height - chromeH - 1; bodyH > avail {
@@ -252,7 +366,7 @@ func (m model) View() string {
 	var body string
 	switch {
 	case m.tab == tabCart:
-		body = clampLines(m.cartView(cw), bodyH)
+		body = clampLines(m.cartView(cw, bodyH), bodyH)
 
 	case twoCol:
 		var left, right string
@@ -290,7 +404,7 @@ func (m model) View() string {
 	// fixed-height body area pins the footer at a stable row (terminal.shop)
 	bodyArea := lipgloss.NewStyle().Width(cw).Height(bodyH).Render(clampLines(body, bodyH))
 
-	promo := lipgloss.PlaceHorizontal(cw, lipgloss.Center, promoStyle.Render("every order supports independent bookstores"))
+	promo := lipgloss.PlaceHorizontal(cw, lipgloss.Center, promoStyle.Render("support independent bookstores"))
 	rule := ruleStyle.Render(strings.Repeat("─", cw))
 
 	stack := lipgloss.JoinVertical(lipgloss.Left,
@@ -324,7 +438,7 @@ func (m model) nav(cw int, twoCol bool) string {
 		hot, label string
 		on, logo   bool
 	}
-	cartLabel := fmt.Sprintf("cart [%d]", len(m.cart))
+	cartLabel := fmt.Sprintf("cart %s [%d]", usd(m.cartTotal()), m.cartCount())
 	mk := func(withLogo bool) []cell {
 		cs := []cell{}
 		if withLogo {
@@ -342,16 +456,23 @@ func (m model) nav(cw int, twoCol bool) string {
 		}
 		return c.hot + " " + c.label
 	}
-	// top bar is all white (no accent); inactive labels are gray
+	// Only the wordmark is bold. The focused tab goes entirely white; the rest
+	// keep a white hotkey over a gray label. In the cart cell the money stays
+	// white either way, as terminal.shop's does.
 	styled := func(c cell) string {
 		if c.logo {
 			return active.Render(c.label)
 		}
 		st := inactive
 		if c.on {
-			st = active
+			st = hotkey
 		}
-		return active.Render(c.hot) + " " + st.Render(c.label)
+		label := st.Render(c.label)
+		if c.hot == "c" {
+			label = st.Render("cart ") + hotkey.Render(usd(m.cartTotal())) +
+				st.Render(fmt.Sprintf(" [%d]", m.cartCount()))
+		}
+		return hotkey.Render(c.hot) + " " + label
 	}
 	fits := func(cells []cell) bool {
 		need := len(cells) + 1 // box bars
@@ -438,10 +559,8 @@ func (m model) navPlain(cw int) string {
 		}
 		return active.Render(hot) + " " + st.Render(label)
 	}
-	cartLabel := "cart"
-	if len(m.cart) > 0 {
-		cartLabel = fmt.Sprintf("cart [%d]", len(m.cart))
-	}
+	// Same shape as the boxed nav, so the two layouts agree.
+	cartLabel := fmt.Sprintf("cart %s [%d]", usd(m.cartTotal()), m.cartCount())
 	sep := navSep.Render(" · ")
 	line := seg("s", "shop", m.tab == tabShop) + sep +
 		seg("a", "acct", m.tab == tabAccount) + sep +
@@ -531,9 +650,12 @@ func (m model) detailView(w int) string {
 	fmt.Fprintln(&sb, dLabel.Width(w).Render(strings.Join(b.attrs(), " | ")))
 	fmt.Fprintln(&sb)
 
-	// The price, where terminal.shop puts it.
+	// The price, where terminal.shop puts it. For a book we no longer have, the
+	// figure is Bookshop's current price rather than a former one of ours, so
+	// it is not struck through: that would read as a discount. The status says
+	// plainly that the shelf is empty.
 	if p := b.Price(); p > 0 {
-		fmt.Fprintln(&sb, dMonth.Render(usd(p)))
+		fmt.Fprintln(&sb, dMonth.Render(usd(p))+dBody.Render(b.stockNote()))
 	} else {
 		fmt.Fprintln(&sb, dLabel.Render("price unavailable"))
 	}
@@ -544,42 +666,188 @@ func (m model) detailView(w int) string {
 	return sb.String()
 }
 
-// action is the boxed call-to-action, like terminal.shop's "subscribe  enter".
+// action is what you can do with the book in front of you. Books we stock get
+// terminal.shop's bare quantity stepper; the rest can only be linked out to,
+// so they show the link itself.
 func (m model) action(w int, b Book) string {
-	label := "buy at dungeonbooks.com"
-	if !strings.Contains(b.BuyURL(), "dungeonbooks.com") {
-		label = "buy at bookshop.org"
+	if b.Sellable {
+		// "- " and " +" dim, the count bright: same as their stepper.
+		return dBody.Render("- ") + dValue.Render(fmt.Sprintf(" %d ", m.qtyInCart(m.cursor))) + dBody.Render(" +")
 	}
+	// The chip states the shelf status; the hint beside it says what the one
+	// available action does. Its background starts flush with the title and
+	// description above, so the accent block lines up with the column.
+	chip := lipgloss.NewStyle().Background(accent).Foreground(ink)
+	// The shop name carries the link rather than printing the affiliate URL,
+	// which is long and ugly on a book page. Two ways to reach it: click it
+	// (OSC 8) or press enter to copy it (OSC 52).
+	tip := dValue.Render("enter") + dBody.Render(" to buy on ") +
+		hyperlink(b.BuyURL(), dLink.Render("bookshop.org"))
 	if m.copied {
-		label = "link copied to clipboard"
+		tip = dBody.Render("link copied to clipboard")
 	}
-	inner := w - 4
-	if inner < len(label)+8 {
-		inner = len(label) + 8
-	}
-	gap := inner - lipgloss.Width(label) - lipgloss.Width("enter")
-	if gap < 1 {
-		gap = 1
-	}
-	row := " " + dValue.Render(label) + strings.Repeat(" ", gap) + dLabel.Render("enter") + " "
-	return boxDim.Render("┌"+strings.Repeat("─", inner+2)+"┐") + "\n" +
-		boxDim.Render("│") + row + boxDim.Render("│") + "\n" +
-		boxDim.Render("└"+strings.Repeat("─", inner+2)+"┘")
+	return chip.Render(" sold out ") + "  " + tip
 }
 
-func (m model) cartView(w int) string {
+// breadcrumb is the checkout step indicator: only the current step is bright,
+// and the whole thing disappears once the order is placed.
+func (m model) breadcrumb() string {
+	steps := []struct {
+		label string
+		at    step
+	}{{"cart", stepCart}, {"checkout", stepPay}}
+	parts := make([]string, 0, len(steps))
+	for _, s := range steps {
+		if s.at == m.step {
+			parts = append(parts, dValue.Render(s.label))
+		} else {
+			parts = append(parts, dBody.Render(s.label))
+		}
+	}
+	return " " + strings.Join(parts, dBody.Render(" / "))
+}
+
+func (m model) cartView(w, h int) string {
+	switch m.step {
+	case stepPay:
+		return m.payView(w, h)
+	case stepDone:
+		return m.doneView(w)
+	case stepThanks:
+		return m.thanksView(w)
+	}
+
 	if len(m.cart) == 0 {
 		return lipgloss.PlaceHorizontal(w, lipgloss.Center, romItem.Render("your cart is empty"))
 	}
+
 	var sb strings.Builder
-	fmt.Fprintln(&sb, dTitle.Render(fmt.Sprintf("cart · %d item(s)", len(m.cart))))
+	fmt.Fprintln(&sb, m.breadcrumb())
 	fmt.Fprintln(&sb)
-	for i, b := range m.cart {
-		fmt.Fprintf(&sb, "%s %s\n", dLabel.Render(fmt.Sprintf("%d.", i+1)), dValue.Width(w-4).Render(b.BookTitle))
-		fmt.Fprintf(&sb, "   %s\n", hyperlink(b.BuyURL(), dLink.Render(b.BuyURL())))
+	for i, l := range m.cart {
+		fmt.Fprint(&sb, m.cartRow(w, i, l))
+	}
+	fmt.Fprintf(&sb, " %s\n", dBody.Render("total "+usd(m.cartTotal())))
+	return sb.String()
+}
+
+// cartRow is one boxed line item. Focus shows as border brightness, and the
+// quantity controls swap in for spaces of the same width so nothing shifts
+// as the cursor moves.
+func (m model) cartRow(w int, i int, l cartLine) string {
+	b := catalog[l.idx]
+	border := boxDim
+	minus, plus := " ", " "
+	if i == m.cartCursor {
+		border = lipgloss.NewStyle().Foreground(white)
+		minus, plus = "-", "+"
+	}
+
+	// One space of margin, then the box. content is what fits between the
+	// borders and their padding.
+	boxW := w - 2
+	if boxW < 28 {
+		boxW = 28
+	}
+	content := boxW - 4
+
+	// The price is deliberately dim and the quantity bright: the number you
+	// might change is the one worth looking at.
+	right := dBody.Render(minus+" ") + dValue.Render(fmt.Sprint(l.qty)) +
+		dBody.Render(" "+plus+"  "+usd(b.Cents*int64(l.qty)))
+	rightW := lipgloss.Width(right)
+
+	name := truncate(b.BookTitle, content-rightW-1)
+	gap := content - lipgloss.Width(name) - rightW
+	if gap < 1 {
+		gap = 1
+	}
+	attrs := truncate(strings.Join(b.attrs(), " | "), content)
+
+	line := func(body string, bodyW int) string {
+		return " " + border.Render("│") + " " + body +
+			strings.Repeat(" ", max(0, content-bodyW)) + " " + border.Render("│")
+	}
+	rule := func(l, r string) string {
+		return " " + border.Render(l+strings.Repeat("─", boxW-2)+r)
+	}
+
+	return rule("┌", "┐") + "\n" +
+		line(dValue.Render(name)+strings.Repeat(" ", gap)+right, lipgloss.Width(name)+gap+rightW) + "\n" +
+		line(dBody.Render(attrs), lipgloss.Width(attrs)) + "\n" +
+		rule("└", "┘") + "\n"
+}
+
+// payView hands the card details to Square: a QR of the hosted checkout, the
+// URL to copy, and a quiet note that we're watching for the payment.
+func (m model) payView(w, h int) string {
+	var sb strings.Builder
+	fmt.Fprintln(&sb, m.breadcrumb())
+	fmt.Fprintln(&sb)
+
+	if m.checkoutErr != nil {
+		fmt.Fprintln(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center, dValue.Render("checkout failed")))
+		fmt.Fprintln(&sb)
+		fmt.Fprintln(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center, dBody.Render(m.checkoutErr.Error())))
+		return sb.String()
+	}
+	if m.checkout.URL == "" {
+		return sb.String() + lipgloss.PlaceHorizontal(w, lipgloss.Center, dBody.Render("building your order…"))
+	}
+
+	// The URL is the fallback for anyone who can't scan, so it is never what
+	// gets clipped. The QR is dropped instead when the window is too short
+	// for both.
+	const chrome = 6 // breadcrumb, blanks, caption, url, status
+	qr := qrLines(m.checkout.URL)
+	if len(qr) > 0 && len(qr)+chrome <= h {
+		for _, line := range qr {
+			fmt.Fprintln(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center, dValue.Render(line)))
+		}
+		fmt.Fprintln(&sb)
+	}
+	fmt.Fprintln(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center, dBody.Render("scan or copy to check out")))
+	fmt.Fprintln(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center,
+		hyperlink(m.checkout.URL, dLink.Render(m.checkout.URL))))
+	// A cursor rather than an ellipsis: it shows the shop is still watching.
+	cursor := " "
+	if m.cursorOn {
+		cursor = logoStyle.Render("█")
+	}
+	fmt.Fprint(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center,
+		dBody.Render("waiting for payment ")+cursor))
+	return sb.String()
+}
+
+func (m model) doneView(w int) string {
+	var sb strings.Builder
+	fmt.Fprintln(&sb, dValue.Render(" order complete!"))
+	fmt.Fprintln(&sb)
+	for _, l := range m.placed {
+		fmt.Fprintf(&sb, " %s\n", dBody.Render(fmt.Sprintf("%s (x%d)", catalog[l.idx].BookTitle, l.qty)))
 	}
 	fmt.Fprintln(&sb)
-	fmt.Fprint(&sb, dBody.Width(w).Render("open these links in a browser to check out."))
+	fmt.Fprint(&sb, dBody.Render(" press ")+dValue.Render("enter")+dBody.Render(" to continue"))
+	return sb.String()
+}
+
+// thanksView breaks the lowercase house style on purpose: it's a letter.
+func (m model) thanksView(w int) string {
+	// PaddingLeft rather than a prefix, so every wrapped line lands on the same
+	// column as the rest of the body instead of only the first.
+	para := lipgloss.NewStyle().Foreground(gray).Width(w).PaddingLeft(1)
+	var sb strings.Builder
+	fmt.Fprintln(&sb, para.Render("Thank you for ordering from Dungeon Books."))
+	fmt.Fprintln(&sb)
+	fmt.Fprintln(&sb, para.Render("Your books are set aside at the shop in Jersey City. Square has emailed you a receipt, and we'll be in touch about pickup or shipping."))
+	fmt.Fprintln(&sb)
+	fmt.Fprintln(&sb, para.Render("If you're reading the book club pick, come argue about it with us at the end of the month."))
+	fmt.Fprintln(&sb)
+	// The signature is the one bright line: it reads as a hand rather than a
+	// system message.
+	sig := lipgloss.NewStyle().Foreground(white).Width(w).PaddingLeft(1)
+	fmt.Fprintln(&sb, sig.Render("Carrie and Panat"))
+	fmt.Fprint(&sb, para.Render("Dungeon Books"))
 	return sb.String()
 }
 
@@ -686,14 +954,21 @@ func (m model) pgAbout(w int) string {
 }
 
 func (m model) footer(cw int) string {
+	// Hints are per screen, as terminal.shop's are: only what works here.
 	var keys string
-	switch m.tab {
-	case tabShop:
-		keys = fk("↑/↓", "products") + fk("enter", "add") + fk("c", "cart") + fk("q", "quit")
-	case tabAccount:
+	switch {
+	case m.tab == tabShop:
+		keys = fk("↑/↓", "books") + fk("+/-", "qty") + fk("c", "cart") + fk("q", "quit")
+	case m.tab == tabAccount:
 		keys = fk("↑/↓", "navigate") + fk("q", "quit")
+	case m.step == stepCart && len(m.cart) > 0:
+		keys = fk("esc", "back") + fk("↑/↓", "items") + fk("+/-", "qty") + fk("enter", "checkout")
+	case m.step == stepPay:
+		keys = fk("esc", "back") + fk("q", "quit")
+	case m.step == stepDone, m.step == stepThanks:
+		keys = fk("enter", "done")
 	default:
-		keys = fk("q", "quit")
+		keys = fk("esc", "back") + fk("q", "quit")
 	}
 	return lipgloss.PlaceHorizontal(cw, lipgloss.Center, strings.TrimRight(keys, " "))
 }
@@ -702,4 +977,26 @@ func (m model) footer(cw int) string {
 // the key is bold white, the label gray.
 func fk(k, label string) string {
 	return active.Render(k) + " " + inactive.Render(label) + "   "
+}
+
+// truncate clips to w display cells, marking the cut with an ellipsis.
+func truncate(s string, w int) string {
+	if w < 1 {
+		return ""
+	}
+	if lipgloss.Width(s) <= w {
+		return s
+	}
+	r := []rune(s)
+	if len(r) > w-1 {
+		r = r[:w-1]
+	}
+	return string(r) + "…"
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
