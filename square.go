@@ -273,6 +273,7 @@ func loadShop(books []Book) (priced int, err error) {
 type checkout struct {
 	URL     string
 	OrderID string
+	LinkID  string // needed to delete the link; Square links never expire
 }
 
 // verifyCart is the last gate before someone is asked for money: it compares
@@ -385,6 +386,7 @@ func (c *squareClient) createLink(ctx context.Context, items []cartItem, idempot
 
 	var out struct {
 		PaymentLink struct {
+			ID      string `json:"id"`
 			URL     string `json:"url"`
 			OrderID string `json:"order_id"`
 		} `json:"payment_link"`
@@ -395,7 +397,11 @@ func (c *squareClient) createLink(ctx context.Context, items []cartItem, idempot
 	if out.PaymentLink.URL == "" {
 		return checkout{}, fresh, fmt.Errorf("square returned no checkout url")
 	}
-	return checkout{URL: out.PaymentLink.URL, OrderID: out.PaymentLink.OrderID}, fresh, nil
+	return checkout{
+		URL:     out.PaymentLink.URL,
+		OrderID: out.PaymentLink.OrderID,
+		LinkID:  out.PaymentLink.ID,
+	}, fresh, nil
 }
 
 // paid reports whether the order has been settled. The buyer pays on a page
