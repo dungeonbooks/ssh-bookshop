@@ -22,3 +22,12 @@ func TestRenderDemo(t *testing.T) {
 	}
 	t.Log("\n" + ansi.ReplaceAllString(m.View(), ""))
 }
+
+// TestAcctPageCount pins the constant to the real menu, since navigation bounds
+// the cursor with it and a stale value would strand the last page.
+func TestAcctPageCount(t *testing.T) {
+	m := newModel(100, 30, "k")
+	if got := len(m.acctPages(40)); got != acctPageCount {
+		t.Fatalf("acctPageCount = %d, but acctPages returns %d", acctPageCount, got)
+	}
+}
