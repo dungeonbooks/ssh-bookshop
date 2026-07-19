@@ -246,14 +246,20 @@ func loadShop(books []Book) (priced int, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), bootTimeout)
 	defer cancel()
 
-	// sq is set whenever the client is usable, which is not the same as the load
-	// having gone perfectly. Callers should check sq rather than treat any error
-	// as fatal: a partly priced shelf still browses and still sells what priced.
 	priced, err = c.loadInto(ctx, books)
-	if err == nil || priced > 0 {
+	if usable(priced, err) {
 		sq = c
 	}
 	return priced, err
+}
+
+// usable reports whether a load left a client worth keeping, which is not the
+// same as the load having gone perfectly. A clean run qualifies, and so does a
+// partial one that priced something: that shelf still browses and still sells
+// what it priced. Only a load that priced nothing leaves sq nil, so callers
+// check sq rather than treating any error as fatal.
+func usable(priced int, err error) bool {
+	return err == nil || priced > 0
 }
 
 // loadInto prices and stocks books from Square. Split from loadShop so tests
