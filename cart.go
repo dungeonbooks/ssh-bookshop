@@ -115,18 +115,36 @@ func pollPaid(orderID string) tea.Cmd {
 // --- cart maths ------------------------------------------------------------
 
 func (m *model) addToCart(idx int) {
+	b := catalog[idx]
 	// Only books we can actually hand over. Everything else links out to
 	// Bookshop, because offering a cart we can't fulfil would be a lie.
-	if !catalog[idx].Sellable {
+	if !b.Sellable {
 		return
 	}
 	for i := range m.cart {
-		if m.cart[i].idx == idx {
-			m.cart[i].qty++
+		if m.cart[i].idx != idx {
+			continue
+		}
+		// Don't let someone stack up copies we don't have. Checkout would
+		// refuse it anyway, and finding out then is a worse way to learn.
+		// Untracked books have no count to cap against.
+		if b.Tracked && m.cart[i].qty >= b.Stock {
 			return
 		}
+		m.cart[i].qty++
+		return
+	}
+	if b.Tracked && b.Stock < 1 {
+		return
 	}
 	m.cart = append(m.cart, cartLine{idx: idx, qty: 1})
+}
+
+// atStockLimit reports that the cart already holds every copy we have, so the
+// detail pane can say so instead of leaving a dead + key unexplained.
+func (m model) atStockLimit(idx int) bool {
+	b := catalog[idx]
+	return b.Tracked && b.Sellable && m.qtyInCart(idx) >= b.Stock
 }
 
 func (m *model) removeFromCart(idx int) {

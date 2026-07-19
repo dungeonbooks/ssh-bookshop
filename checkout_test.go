@@ -119,3 +119,62 @@ func TestParseQuantity(t *testing.T) {
 		}
 	}
 }
+
+// TestAddToCartRespectsStock: the cart must not accept more copies than the
+// shelf holds. Checkout would refuse it anyway, but finding out at the payment
+// screen is a worse way to learn.
+func TestAddToCartRespectsStock(t *testing.T) {
+	orig := catalog[0]
+	defer func() { catalog[0] = orig }()
+
+	set := func(stock int, tracked, sellable bool) {
+		catalog[0].VariationID, catalog[0].Cents = "VAR0", 3000
+		catalog[0].Stock, catalog[0].Tracked, catalog[0].Sellable = stock, tracked, sellable
+	}
+
+	t.Run("stops at the last copy", func(t *testing.T) {
+		set(2, true, true)
+		var m model
+		for i := 0; i < 5; i++ {
+			m.addToCart(0)
+		}
+		if got := m.qtyInCart(0); got != 2 {
+			t.Fatalf("cart holds %d of 2 in stock", got)
+		}
+		if !m.atStockLimit(0) {
+			t.Error("should report being at the limit")
+		}
+	})
+
+	t.Run("untracked has no cap", func(t *testing.T) {
+		set(0, false, true)
+		var m model
+		for i := 0; i < 3; i++ {
+			m.addToCart(0)
+		}
+		if got := m.qtyInCart(0); got != 3 {
+			t.Fatalf("untracked book capped at %d, should be uncapped", got)
+		}
+		if m.atStockLimit(0) {
+			t.Error("untracked book should never report a limit")
+		}
+	})
+
+	t.Run("zero stock never enters the cart", func(t *testing.T) {
+		set(0, true, true) // sellable flag stale, count says otherwise
+		var m model
+		m.addToCart(0)
+		if got := m.qtyInCart(0); got != 0 {
+			t.Fatalf("added %d copies of a book with none in stock", got)
+		}
+	})
+
+	t.Run("sold out never enters the cart", func(t *testing.T) {
+		set(-3, true, false)
+		var m model
+		m.addToCart(0)
+		if got := m.qtyInCart(0); got != 0 {
+			t.Fatalf("added %d copies of a sold out book", got)
+		}
+	})
+}
