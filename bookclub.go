@@ -44,16 +44,6 @@ var catalog = []Book{
 		URL:   "https://www.dungeonbooks.com/product/saltcrop-by-yume-kitasei-hardcover-/SHDDSGUBEE7B2NOCEABTYGVK"},
 }
 
-// monthLabel turns "2026-07" into "July 2026". Returns "" for anything that
-// isn't that shape, so callers fall back rather than print a raw key.
-func monthLabel(month string) string {
-	t, err := time.Parse("2006-01", month)
-	if err != nil {
-		return ""
-	}
-	return t.Format("January 2006")
-}
-
 // featured is the index of this month's pick, or -1 when the shelf has not
 // caught up to the calendar yet. Resolved per call rather than at init so a
 // long-running server rolls over at the month boundary on its own.

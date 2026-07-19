@@ -261,7 +261,7 @@ func loadShop(books []Book) (priced int, err error) {
 			continue
 		}
 		books[i].Stock, books[i].Tracked = qty[id], !untracked[id]
-		books[i].Sellable = untracked[id] || qty[id] > 0
+		books[i].Sellable = sellable(untracked[id], qty[id])
 	}
 
 	sq = c
@@ -314,6 +314,13 @@ type freshItem struct {
 	sellable  bool
 }
 
+// sellable decides whether the shop will take money for a book: stock we do not
+// track is always sellable, tracked stock only while some remains. Square will
+// sell past zero, so this is ours to enforce.
+func sellable(untracked bool, qty int) bool {
+	return untracked || qty > 0
+}
+
 // recheck re-reads price and stock for everything in the cart, keyed by
 // variation id.
 func (c *squareClient) recheck(ctx context.Context, items []cartItem) (map[string]freshItem, error) {
@@ -341,7 +348,7 @@ func (c *squareClient) recheck(ctx context.Context, items []cartItem) (map[strin
 			cents:     prices[id],
 			stock:     qty[id],
 			untracked: untracked[id],
-			sellable:  untracked[id] || qty[id] > 0,
+			sellable:  sellable(untracked[id], qty[id]),
 		}
 	}
 	return out, nil

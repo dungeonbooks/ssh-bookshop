@@ -172,3 +172,25 @@ func TestAddToCartRespectsStock(t *testing.T) {
 		}
 	})
 }
+
+// TestSellable pins the rule that decides whether the shop takes money. It was
+// written out three times, once in check.go — the tool you would use to verify a
+// change to it — so a drifted copy there would have been actively misleading.
+func TestSellable(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		untracked bool
+		qty       int
+		want      bool
+	}{
+		{"untracked stock always sells", true, 0, true},
+		{"untracked ignores a negative count", true, -3, true},
+		{"tracked with stock sells", false, 2, true},
+		{"tracked at zero does not", false, 0, false},
+		{"tracked below zero does not", false, -1, false},
+	} {
+		if got := sellable(tc.untracked, tc.qty); got != tc.want {
+			t.Errorf("%s: sellable(%v, %d) = %v, want %v", tc.name, tc.untracked, tc.qty, got, tc.want)
+		}
+	}
+}

@@ -294,11 +294,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, pollPaid(msg.out.OrderID)
 
 	case paidMsg:
-		if msg.err != nil {
-			// A failed poll is not a failed order. Keep waiting rather than
-			// telling someone their payment did not go through.
-			return m, pollPaid(m.checkout.OrderID)
-		}
+		// Confirmation first, wherever they happen to be: the money has moved,
+		// so an in-flight poll landing after they backed out still completes the
+		// order rather than stranding a paid customer on the cart.
 		if msg.paid {
 			// Empty the cart the moment Square confirms, so the nav total goes
 			// to zero on the order screen rather than lingering behind a letter
@@ -307,9 +305,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.step = stepDone
 			return m, nil
 		}
-		if m.step == stepPay {
-			return m, pollPaid(m.checkout.OrderID)
+		// Otherwise stop once they have left checkout or the order is gone.
+		// Without this the error path re-polls forever, and after esc then enter
+		// clears m.checkout it re-polls an empty order id.
+		if m.step != stepPay || m.checkout.OrderID == "" {
+			return m, nil
 		}
+		// A failed poll is not a failed order. Keep waiting rather than telling
+		// someone their payment did not go through.
+		return m, pollPaid(m.checkout.OrderID)
 	}
 	return m, nil
 }
@@ -992,11 +996,4 @@ func truncate(s string, w int) string {
 		r = r[:w-1]
 	}
 	return string(r) + "…"
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
