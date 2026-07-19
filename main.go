@@ -18,6 +18,9 @@ import (
 	"github.com/charmbracelet/wish/activeterm"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/charmbracelet/wish/logging"
+	"github.com/charmbracelet/wish/ratelimiter"
+	// Aliased: the package name shadows the recover builtin.
+	wrecover "github.com/charmbracelet/wish/recover"
 	"github.com/muesli/termenv"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -51,16 +54,52 @@ func main() {
 			"priced", found, "of", len(catalog), "location", sq.locationID)
 	}
 
+	// A fixed host key from the environment where storage is ephemeral; a
+	// generated one on disk for local development. See hostKeyPEM for why not a
+	// Railway volume.
+	hostKey, err := hostKeyPEM()
+	if err != nil {
+		log.Fatal("bad host key", "err", err)
+	}
+	var hostKeyOpt ssh.Option
+	switch {
+	case hostKey != nil:
+		hostKeyOpt = wish.WithHostKeyPEM(hostKey)
+		log.Info("host key loaded from SSH_HOST_KEY")
+
+	// True in the image and on any Railway deployment, false during `go run .`.
+	// Otherwise a missing key is merely a warning, and the shop would boot
+	// happily on a fresh key after every deploy, greeting each returning visitor
+	// with REMOTE HOST IDENTIFICATION HAS CHANGED. That reads as a compromised
+	// shop, so refuse to start instead.
+	case ephemeralStorage():
+		log.Fatal("SSH_HOST_KEY is required in this environment",
+			"why", "storage is ephemeral, so a generated key would change on every deploy")
+
+	default:
+		hostKeyOpt = wish.WithHostKeyPath(".ssh/id_ed25519")
+		log.Warn("SSH_HOST_KEY unset, using .ssh/id_ed25519",
+			"note", "fine locally; on ephemeral storage this changes every deploy")
+	}
+
 	s, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort(host, port)),
-		wish.WithHostKeyPath(".ssh/id_ed25519"),
+		hostKeyOpt,
 		// Accept any public key: anonymous browse is allowed. The key is still
 		// captured per-session and becomes the account identity at checkout.
 		wish.WithPublicKeyAuth(func(ssh.Context, ssh.PublicKey) bool { return true }),
+		// The whole chain goes inside recover, not just the shop: a panic in any
+		// of these would otherwise take the server down and every other
+		// shopper's connection with it. Both wish and recover call the last
+		// entry first, so this reads bottom-up: rate limit, log, require a
+		// terminal, then run the shop.
 		wish.WithMiddleware(
-			bubbletea.Middleware(teaHandler),
-			activeterm.Middleware(), // require a real interactive terminal
-			logging.Middleware(),
+			wrecover.Middleware(
+				bubbletea.Middleware(teaHandler),
+				activeterm.Middleware(), // require a real interactive terminal
+				logging.Middleware(),
+				ratelimiter.Middleware(connectionLimiter()),
+			),
 		),
 	)
 	if err != nil {

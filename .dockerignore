@@ -1,0 +1,14 @@
+# Never let a real token reach the build context. The code reads real
+# environment variables first and only falls back to .env, so production needs
+# nothing on disk.
+.env
+.env.*
+
+# Host keys are injected via SSH_HOST_KEY; a local one must not be baked in.
+.ssh/
+
+.git/
+.github/
+.terminalgraph/
+*_test.go
+README.md
