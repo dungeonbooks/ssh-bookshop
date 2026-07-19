@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// AffiliateID is dungeonbooks' Bookshop.org affiliate identifier (matches
-// marty's BOOKSHOP_AFFILIATE_ID). Affiliate links pay a commission; every ISBN
-// below was validated against bookshop.org/book/{isbn} (308 = live).
+// AffiliateID is dungeonbooks' Bookshop.org affiliate identifier. Affiliate
+// links pay a commission; every ISBN below was validated against
+// bookshop.org/book/{isbn} (308 = live).
 const AffiliateID = "108216"
 
 func affiliate(isbn string) string {

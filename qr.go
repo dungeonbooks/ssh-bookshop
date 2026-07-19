@@ -4,23 +4,14 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-// qrLines renders a URL as half-block rows. Each cell carries two module rows,
-// so the code stays roughly square instead of doubling in height.
+// qrLines renders a URL as half-block rows, two module rows per cell so the code
+// stays roughly square. Returns nil if the URL won't encode, leaving the caller
+// to fall back to the plain link.
 //
-// Dark modules are the printed glyphs and light modules are left as spaces, so
-// the terminal background shows through. This is what terminal.shop does, and it
-// buys two things over painting the light modules instead. The quiet zone costs
-// nothing: the empty screen around the code already is one, and an unbounded one
-// rather than the four modules the spec asks for. And the odd module count stops
-// mattering. A QR is always odd on a side, so half-block pairing leaves a
-// trailing row, which as a light row is simply invisible here.
-//
-// The cost is that on a dark terminal this reads inverted, dark modules coming
-// out bright. Scanners have handled that for years, and it is the arrangement
-// terminal.shop takes real orders through.
-//
-// Returns nil if the URL won't encode, so the caller falls back to the plain
-// link rather than a broken box.
+// Dark modules are the glyphs and light ones are spaces, as terminal.shop does.
+// That makes the quiet zone free and unbounded (the empty screen supplies it) and
+// makes the trailing row of an odd module count invisible rather than padding.
+// It reads inverted on a dark terminal, which scanners have long handled.
 func qrLines(url string) []string {
 	q, err := qrcode.New(url, qrcode.Low)
 	if err != nil {

@@ -26,7 +26,7 @@ var (
 var (
 	boxDim   = lipgloss.NewStyle().Foreground(dim)
 	hotkey   = lipgloss.NewStyle().Foreground(white)
-	active   = lipgloss.NewStyle().Foreground(white).Bold(true) // footer keys only
+	active   = lipgloss.NewStyle().Foreground(white).Bold(true) // wordmark, nav, hotkeys
 	inactive = lipgloss.NewStyle().Foreground(gray)
 
 	secHead = lipgloss.NewStyle().Foreground(white)
@@ -273,10 +273,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.tab == tabShop:
 				// A server can't open a browser on someone else's machine, so
-				// "open the link" means putting it on their clipboard (OSC 52)
-				// and leaving it clickable (OSC 8) where that is supported.
+				// "open the link" means putting it on their clipboard.
 				m.copied = true
-				return m, tea.Tick(copiedFor, func(time.Time) tea.Msg { return copiedMsg{} })
+				return m, tea.Batch(
+					tea.SetClipboard(m.book(m.cursor).BuyURL()),
+					tea.Tick(copiedFor, func(time.Time) tea.Msg { return copiedMsg{} }),
+				)
 			case m.tab == tabCart && m.step == stepCart && len(m.cart) > 0:
 				m.step = stepPay
 				m.checkoutErr = nil
@@ -452,11 +454,7 @@ func (m model) render() string {
 	if lipgloss.Height(stack) >= avail {
 		vpos = lipgloss.Top
 	}
-	out := lipgloss.Place(m.width, avail, lipgloss.Center, vpos, stack)
-	if m.copied && m.tab == tabShop {
-		out = osc52(catalog[m.cursor].BuyURL()) + out
-	}
-	return out
+	return lipgloss.Place(m.width, avail, lipgloss.Center, vpos, stack)
 }
 
 // nav draws the boxed cell bar. Cells stretch to fill cw so the bar spans the
@@ -709,7 +707,7 @@ func (m model) action(w int, b Book) string {
 	chip := lipgloss.NewStyle().Background(accent).Foreground(ink)
 	// The shop name carries the link rather than printing the affiliate URL,
 	// which is long and ugly on a book page. Two ways to reach it: click it
-	// (OSC 8) or press enter to copy it (OSC 52).
+	// (OSC 8) or press enter to copy it.
 	tip := dValue.Render("enter") + dBody.Render(" to buy on ") +
 		hyperlink(b.BuyURL(), dLink.Render("bookshop.org"))
 	if m.copied {
@@ -934,8 +932,8 @@ func (m model) pgFAQ(w int) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-// pgOrders is the empty state until checkout exists. terminal.shop centers the
-// same message in the page rather than explaining itself.
+// pgOrders stays empty because nothing keeps orders between sessions yet. Square
+// holds them; the shop has no identity to look them up by.
 func (m model) pgOrders(w int) string {
 	return lipgloss.PlaceHorizontal(w, lipgloss.Center, romItem.Render("no orders found"))
 }
