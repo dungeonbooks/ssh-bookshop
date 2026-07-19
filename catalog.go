@@ -32,6 +32,7 @@ type Book struct {
 	Format      string // "hardcover", "paperback" — the edition we stock
 	Pages       int    // 0 when unknown
 	Cents       int64  // price from Square, 0 when we don't carry it
+	VariationID string // Square catalog variation, needed to build an order
 	ListCents   int64  // publisher list price, for books we don't stock
 }
 
