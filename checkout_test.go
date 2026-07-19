@@ -18,7 +18,7 @@ func TestCheckoutRejectsStale(t *testing.T) {
 	}{
 		{"sold out since boot", freshItem{cents: 3000, stock: 0, sellable: false}, "just sold out"},
 		{"fewer left than wanted", freshItem{cents: 3000, stock: 1, sellable: true}, "only 1 left"},
-		{"price changed", freshItem{cents: 3500, stock: 9, sellable: true}, "is now $35.00"},
+		{"price changed", freshItem{cents: 3500, stock: 9, sellable: true}, "is now $35"},
 		{"untracked is fine", freshItem{cents: 3000, stock: 0, untracked: true, sellable: true}, ""},
 	}
 

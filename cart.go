@@ -48,9 +48,19 @@ type step int
 
 const (
 	stepCart   step = iota // reviewing line items
+	stepFulfil             // pickup at the shop, or ship it
 	stepPay                // showing the QR and waiting on Square
 	stepDone               // Square says it's paid
 	stepThanks             // the letter
+)
+
+// How the order reaches the buyer. Square's hosted page cannot offer the choice,
+// so it is made here and baked into the order we hand it.
+type fulfilment int
+
+const (
+	fulfilPickup fulfilment = iota
+	fulfilShip
 )
 
 // pollEvery is how often we ask Square whether the buyer has paid. They are
@@ -86,14 +96,14 @@ func newIdempotencyKey() string {
 }
 
 // startCheckout builds the order on Square and returns a hosted link.
-func startCheckout(items []cartItem, key string) tea.Cmd {
+func startCheckout(items []cartItem, how fulfilment, shipCents int64, key string) tea.Cmd {
 	return func() tea.Msg {
 		if sq == nil {
 			return checkoutMsg{err: fmt.Errorf("square is not configured")}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), squareTimeout)
 		defer cancel()
-		out, fresh, err := sq.createLink(ctx, items, key)
+		out, fresh, err := sq.createLink(ctx, items, how, shipCents, key)
 		return checkoutMsg{out: out, fresh: fresh, err: err}
 	}
 }
