@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 var ansi = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
@@ -17,10 +17,10 @@ func TestRenderDemo(t *testing.T) {
 	m = mm.(model)
 	// move selection down to a paid title so the detail shows a buy link
 	for i := 0; i < 2; i++ {
-		mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		mm, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		m = mm.(model)
 	}
-	t.Log("\n" + ansi.ReplaceAllString(m.View(), ""))
+	t.Log("\n" + ansi.ReplaceAllString(m.render(), ""))
 }
 
 // TestAcctPageCount pins the constant to the real menu, since navigation bounds

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/charmbracelet/wish/ratelimiter"
+	"charm.land/wish/v2/ratelimiter"
 	"golang.org/x/time/rate"
 )
 

@@ -3,9 +3,9 @@ package main
 import (
 	"testing"
 
+	"charm.land/wish/v2"
+	wrecover "charm.land/wish/v2/recover"
 	"github.com/charmbracelet/ssh"
-	"github.com/charmbracelet/wish"
-	wrecover "github.com/charmbracelet/wish/recover"
 )
 
 // TestRecoverCoversWholeChain pins the reason every middleware is passed to

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/charmbracelet/log"
+	"charm.land/log/v2"
 )
 
 // Square payment links never expire, so every abandoned checkout leaves a live

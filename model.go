@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Palette — the grays are terminal.shop's exact ANSI 256 indices, so the shelf
@@ -370,7 +370,15 @@ func (m model) dims() (cw, rightW, bodyH int, twoCol bool) {
 	return
 }
 
-func (m model) View() string {
+// View is what bubbletea renders. The work is in render(); this only wraps it,
+// which also keeps every test asserting on plain strings.
+func (m model) View() tea.View {
+	v := tea.NewView(m.render())
+	v.AltScreen = true
+	return v
+}
+
+func (m model) render() string {
 	if !m.ready {
 		// A space when the cursor is off, so the wordmark never shifts.
 		cursor := " "
