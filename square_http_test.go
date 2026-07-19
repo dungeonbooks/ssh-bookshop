@@ -306,3 +306,126 @@ func TestSweepLinksFollowsCursor(t *testing.T) {
 		t.Errorf("deleted %v, want both pages swept", deleted)
 	}
 }
+
+// shelfRoutes is a fake Square with one priced, stocked book and one it has
+// never heard of.
+func shelfRoutes(t *testing.T, lookupDelay time.Duration) map[string]func(http.ResponseWriter, *http.Request) {
+	return map[string]func(http.ResponseWriter, *http.Request){
+		"/v2/locations": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"locations":[
+				{"id":"L0","status":"INACTIVE","capabilities":["CREDIT_CARD_PROCESSING"]},
+				{"id":"L1","status":"ACTIVE","capabilities":["CREDIT_CARD_PROCESSING"]}
+			]}`)
+		},
+		"/v2/catalog/search-catalog-items": func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(lookupDelay)
+			var body struct {
+				TextFilter string `json:"text_filter"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decoding catalog search body: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if body.TextFilter != "known" {
+				io.WriteString(w, `{"items":[]}`)
+				return
+			}
+			io.WriteString(w, `{"items":[{"item_data":{"variations":[
+				{"id":"VAR1","item_variation_data":{"upc":"known","price_money":{"amount":2200,"currency":"USD"}}}
+			]}}]}`)
+		},
+		"/v2/inventory/counts/batch-retrieve": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"counts":[{"catalog_object_id":"VAR1","state":"IN_STOCK","quantity":"3"}]}`)
+		},
+	}
+}
+
+func TestLoadIntoPricesWhatSquareKnows(t *testing.T) {
+	c := fakeSquare(t, shelfRoutes(t, 0))
+	books := []Book{{ISBN: "known"}, {ISBN: "unknown"}}
+
+	priced, err := c.loadInto(context.Background(), books)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if priced != 1 {
+		t.Errorf("priced = %d, want 1", priced)
+	}
+	if books[0].Cents != 2200 || books[0].Stock != 3 || !books[0].Sellable {
+		t.Errorf("known book = %+v, want priced, stocked and sellable", books[0])
+	}
+	if books[1].Cents != 0 || books[1].Sellable {
+		t.Errorf("unknown book = %+v, want unpriced and not sellable", books[1])
+	}
+	if c.locationID != "L1" {
+		t.Errorf("locationID = %q, want L1", c.locationID)
+	}
+}
+
+// TestLoadIntoLooksUpConcurrently guards the boot delay. Sequentially this was
+// one round trip per book with the listener not yet accepting connections, so a
+// slow Square meant an unreachable shop rather than a degraded one.
+func TestLoadIntoLooksUpConcurrently(t *testing.T) {
+	const delay = 80 * time.Millisecond
+	books := make([]Book, 8)
+	for i := range books {
+		books[i] = Book{ISBN: "unknown"}
+	}
+
+	c := fakeSquare(t, shelfRoutes(t, delay))
+	start := time.Now()
+	if _, err := c.loadInto(context.Background(), books); err != nil {
+		t.Fatal(err)
+	}
+	elapsed := time.Since(start)
+
+	sequential := delay * time.Duration(len(books))
+	if elapsed >= sequential {
+		t.Errorf("took %v, sequential would be %v: lookups are not overlapping", elapsed, sequential)
+	}
+	t.Logf("%d books in %v (sequential would be %v)", len(books), elapsed.Round(time.Millisecond), sequential)
+}
+
+// TestLoadIntoKeepsWhatItGot: one bad lookup must not throw away the rest, or a
+// single flaky response empties the shelf.
+func TestLoadIntoKeepsWhatItGot(t *testing.T) {
+	routes := shelfRoutes(t, 0)
+	routes["/v2/catalog/search-catalog-items"] = func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			TextFilter string `json:"text_filter"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decoding catalog search body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		switch body.TextFilter {
+		case "known":
+			io.WriteString(w, `{"items":[{"item_data":{"variations":[
+				{"id":"VAR1","item_variation_data":{"upc":"known","price_money":{"amount":2200,"currency":"USD"}}}
+			]}}]}`)
+		default:
+			io.WriteString(w, `{"errors":[{"code":"INTERNAL_SERVER_ERROR","detail":"boom"}]}`)
+		}
+	}
+	c := fakeSquare(t, routes)
+	books := []Book{{ISBN: "known"}, {ISBN: "explodes"}}
+
+	priced, err := c.loadInto(context.Background(), books)
+	if err == nil {
+		t.Error("err = nil, want the failed lookup reported")
+	}
+	if priced != 1 {
+		t.Errorf("priced = %d, want 1: the good book was thrown away with the bad", priced)
+	}
+	if books[0].Cents != 2200 {
+		t.Errorf("known book lost its price: %+v", books[0])
+	}
+	// The half-state worth guarding: returning before the stock call would
+	// leave the priced book Sellable false, so the shelf shows a price and
+	// then refuses to sell it.
+	if !books[0].Sellable || books[0].Stock != 3 {
+		t.Errorf("known book = %+v, want stocked and sellable despite the other lookup failing", books[0])
+	}
+}

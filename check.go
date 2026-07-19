@@ -12,7 +12,11 @@ import (
 func checkShelf(extra []string) {
 	priced, err := loadShop(catalog)
 	if err != nil {
+		// Not fatal on its own: a partly loaded shelf is exactly what this
+		// command exists to show you.
 		fmt.Fprintln(os.Stderr, "square:", err)
+	}
+	if sq == nil {
 		return
 	}
 	fmt.Printf("env=%s location=%s priced=%d/%d\n\n",
