@@ -23,6 +23,8 @@ import (
 )
 
 func main() {
+	loadDotEnv(".env")
+
 	host := env("HOST", "0.0.0.0")
 	port := env("PORT", "23234")
 
@@ -38,7 +40,8 @@ func main() {
 	if found, err := loadShop(catalog); err != nil {
 		log.Warn("square unavailable, browsing only", "err", err, "priced", found)
 	} else {
-		log.Info("square ready", "priced", found, "of", len(catalog), "location", sq.locationID)
+		log.Info("square ready", "env", env("SQUARE_ENVIRONMENT", "production"),
+			"priced", found, "of", len(catalog), "location", sq.locationID)
 	}
 
 	s, err := wish.NewServer(
