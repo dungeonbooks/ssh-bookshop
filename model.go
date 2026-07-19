@@ -535,37 +535,12 @@ func (m model) nav(cw int, twoCol bool) string {
 		return m.navPlain(cw)
 	}
 
-	// widths: each cell gets its label + min padding, then leftover spread evenly
 	n := len(cells)
-	widths := make([]int, n)
-	used := n + 1
+	labels := make([]int, n)
 	for i, c := range cells {
-		widths[i] = lipgloss.Width(plain(c)) + 2
-		used += widths[i]
+		labels[i] = lipgloss.Width(plain(c))
 	}
-	for i := 0; used < cw; i = (i + 1) % n {
-		widths[i]++
-		used++
-	}
-
-	// In two-column mode, size the logo cell so the divider after it lands on the
-	// detail column edge (leftCol): divider sits at col 1+widths[0], align to leftCol.
-	if twoCol && n > 1 && cells[0].logo {
-		delta := widths[0] - (leftCol - 1) // columns to move off the logo cell
-		widths[0] = leftCol - 1
-		for i := 1; delta != 0; i++ {
-			if i >= n {
-				i = 1
-			}
-			if delta > 0 {
-				widths[i]++
-				delta--
-			} else {
-				widths[i]--
-				delta++
-			}
-		}
-	}
+	widths := navWidths(labels, cw, twoCol && cells[0].logo)
 
 	var top, mid, bot strings.Builder
 	top.WriteString("┌")
