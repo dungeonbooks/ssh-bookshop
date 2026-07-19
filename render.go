@@ -38,7 +38,7 @@ func (m model) render() string {
 		var left, right string
 		if m.tab == tabAccount {
 			pages := m.acctPages(rightW)
-			left, right = m.accountMenu(pages), pages[m.acct].body
+			left, right = m.accountMenu(pages, leftCol), pages[m.acct].body
 		} else {
 			left, right = m.productList(bodyH, leftCol), m.detailView(rightW)
 		}
@@ -59,7 +59,7 @@ func (m model) render() string {
 		var top, bottom string
 		if m.tab == tabAccount {
 			pages := m.acctPages(cw)
-			top, bottom = m.accountMenu(pages), pages[m.acct].body
+			top, bottom = m.accountMenu(pages, cw), pages[m.acct].body
 		} else {
 			top, bottom = m.productList(listRows, cw), m.detailView(cw)
 		}
@@ -141,9 +141,18 @@ func truncate(s string, w int) string {
 	if lipgloss.Width(s) <= w {
 		return s
 	}
-	r := []rune(s)
-	if len(r) > w-1 {
-		r = r[:w-1]
+	// Spend display cells, not runes. A wide rune costs two, so a rune count
+	// overshoots the column on CJK and emoji while cutting ASCII short. One
+	// cell is held back for the ellipsis.
+	var b strings.Builder
+	used := 0
+	for _, r := range s {
+		rw := lipgloss.Width(string(r))
+		if used+rw > w-1 {
+			break
+		}
+		b.WriteRune(r)
+		used += rw
 	}
-	return string(r) + "…"
+	return b.String() + "…"
 }
