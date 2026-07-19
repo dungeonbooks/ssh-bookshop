@@ -33,7 +33,9 @@ func (m model) accountMenu(pages []acctPage, w int) string {
 	var sb strings.Builder
 	for i, p := range pages {
 		if i == m.acct {
-			sb.WriteString(selItem.Width(w - 1).Render(" " + truncate(p.title, w-1)))
+			// The leading space is part of the highlight, so the title budget is
+			// two less than the column: one for it, one for the style width.
+			sb.WriteString(selItem.Width(w - 1).Render(" " + truncate(p.title, w-2)))
 		} else {
 			sb.WriteString(romItem.Render(" " + p.title))
 		}

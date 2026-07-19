@@ -83,3 +83,30 @@ func TestSelectedRowMatchesTheColumnWidth(t *testing.T) {
 			widest, leftCol, cw)
 	}
 }
+
+// The highlight is a fixed-width style with a leading space rendered inside it,
+// so the title has to be budgeted for both. Overflow does not clip here, it
+// wraps, which pushes the rest of the menu down a row. Today's titles are all
+// short enough to hide this, so the test supplies one that is not.
+func TestAccountMenuHighlightFitsItsColumn(t *testing.T) {
+	m := newModel(100, 30, "fp")
+	m.acct = 0
+	pages := []acctPage{
+		{title: "order history and receipts"}, // longer than the two-column menu
+		{title: "faq"},
+	}
+	const w = leftCol // the sidebar width, where the column is tightest
+
+	out := strings.TrimRight(ansi.ReplaceAllString(m.accountMenu(pages, w), ""), "\n")
+	lines := strings.Split(out, "\n")
+
+	if len(lines) != len(pages) {
+		t.Fatalf("menu drew %d lines for %d pages, so a title wrapped inside its highlight",
+			len(lines), len(pages))
+	}
+	for _, line := range lines {
+		if got := lipgloss.Width(line); got > w-1 {
+			t.Errorf("menu row %q is %d cells in a %d-wide highlight", line, got, w-1)
+		}
+	}
+}
