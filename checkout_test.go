@@ -83,3 +83,29 @@ func TestStockNote(t *testing.T) {
 		})
 	}
 }
+
+// TestBuyURLFallsBackWhenSoldOut covers the case that only shows up after a
+// book sells out mid-session: our own product page becomes a dead end, and the
+// chip already promises Bookshop, so the link has to actually go there.
+func TestBuyURLFallsBackWhenSoldOut(t *testing.T) {
+	ours := "https://www.dungeonbooks.com/product/x/ABC"
+	theirs := "https://bookshop.org/a/108216/9781250406811"
+
+	cases := []struct {
+		name string
+		b    Book
+		want string
+	}{
+		{"in stock uses our store", Book{ISBN: "9780000000001", URL: ours, Sellable: true}, ours},
+		{"sold out leaves our store", Book{ISBN: "9780000000001", URL: ours, Sellable: false}, "bookshop.org/a/108216/9780000000001"},
+		{"hand-picked bookshop link is kept", Book{ISBN: "9781250406828", URL: theirs, Sellable: false}, theirs},
+		{"no url at all", Book{ISBN: "9780000000002", Sellable: true}, "bookshop.org/a/108216/9780000000002"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.b.BuyURL(); !strings.Contains(got, tc.want) {
+				t.Fatalf("got %q, want it to contain %q", got, tc.want)
+			}
+		})
+	}
+}

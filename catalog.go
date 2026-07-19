@@ -76,8 +76,16 @@ func (b Book) attrs() []string {
 	return out
 }
 
-// BuyURL prefers our own store: a sale beats an affiliate commission.
+// BuyURL is where to send someone who wants this book.
+//
+// While we have it, our own store: a sale beats an affiliate commission. Once
+// we don't, our product page is a dead end, so it falls back to Bookshop. A
+// hand-picked Bookshop link wins there, because it can point at the edition
+// they actually stock when ours is keyed to a different one.
 func (b Book) BuyURL() string {
+	if !b.Sellable && !strings.Contains(b.URL, "bookshop.org") {
+		return affiliate(b.ISBN)
+	}
 	if b.URL != "" {
 		return b.URL
 	}
