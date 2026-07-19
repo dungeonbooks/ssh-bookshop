@@ -51,7 +51,7 @@ const (
 	twoColMin     = 80 // two columns at/above this terminal width
 	leftCol       = 20 // product/menu column in two-column mode
 	bodyMax       = 21 // body area height when the window has room to spare
-	chromeH       = 8  // nav(3) + blank + body + blank + promo + rule + footer
+	chromeH       = 8  // everything but the body: nav(3), 2 blanks, promo, rule, footer
 )
 
 type tab int
@@ -145,7 +145,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor++
 				}
 			case tabAccount:
-				if m.acct < len(m.acctPages(0))-1 {
+				if m.acct < acctPageCount-1 {
 					m.acct++
 				}
 			}
@@ -216,7 +216,7 @@ func (m model) View() string {
 			pages := m.acctPages(rightW)
 			left, right = m.accountMenu(pages), pages[m.acct].body
 		} else {
-			left, right = m.productList(bodyH), m.detailView(rightW)
+			left, right = m.productList(bodyH, leftCol), m.detailView(rightW)
 		}
 		body = lipgloss.JoinHorizontal(lipgloss.Top,
 			lipgloss.NewStyle().Width(leftCol).Render(clampLines(left, bodyH)),
@@ -237,7 +237,7 @@ func (m model) View() string {
 			pages := m.acctPages(cw)
 			top, bottom = m.accountMenu(pages), pages[m.acct].body
 		} else {
-			top, bottom = m.productList(listRows), m.detailView(cw)
+			top, bottom = m.productList(listRows, cw), m.detailView(cw)
 		}
 		body = lipgloss.JoinVertical(lipgloss.Left,
 			clampLines(top, listRows), "", clampLines(bottom, detBudget))
@@ -392,7 +392,7 @@ func (m model) navPlain(cw int) string {
 	}
 	cartLabel := "cart"
 	if len(m.cart) > 0 {
-		cartLabel = fmt.Sprintf("cart[%d]", len(m.cart))
+		cartLabel = fmt.Sprintf("cart [%d]", len(m.cart))
 	}
 	sep := navSep.Render(" · ")
 	line := seg("s", "shop", m.tab == tabShop) + sep +
@@ -415,12 +415,12 @@ func clampLines(s string, n int) string {
 }
 
 // productList renders the catalog grouped by collection, windowed to maxRows.
-func (m model) productList(maxRows int) string {
+func (m model) productList(maxRows, colW int) string {
 	type row struct {
 		text    string
 		bookIdx int
 	}
-	maxw := leftCol - 3 // 1 leading space + 2-col gutter before the detail column
+	maxw := colW - 3 // 1 leading space + 2-col gutter before the detail column
 	rows := []row{}
 	lastColl := ""
 	for i, b := range catalog {
@@ -516,6 +516,10 @@ type acctPage struct {
 }
 
 // acctPages builds the account sub-pages. Everything here is real for this app.
+// acctPageCount is the menu length. Kept alongside acctPages so navigation can
+// bound the cursor without rendering every page body just to count them.
+const acctPageCount = 3
+
 func (m model) acctPages(w int) []acctPage {
 	return []acctPage{
 		{"faq", m.pgFAQ(w)},
