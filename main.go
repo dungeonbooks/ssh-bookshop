@@ -10,18 +10,16 @@ import (
 	"syscall"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/log/v2"
+	"charm.land/wish/v2"
+	"charm.land/wish/v2/activeterm"
+	"charm.land/wish/v2/bubbletea"
+	"charm.land/wish/v2/logging"
+	"charm.land/wish/v2/ratelimiter"
 	"github.com/charmbracelet/ssh"
-	"github.com/charmbracelet/wish"
-	"github.com/charmbracelet/wish/activeterm"
-	"github.com/charmbracelet/wish/bubbletea"
-	"github.com/charmbracelet/wish/logging"
-	"github.com/charmbracelet/wish/ratelimiter"
 	// Aliased: the package name shadows the recover builtin.
-	wrecover "github.com/charmbracelet/wish/recover"
-	"github.com/muesli/termenv"
+	wrecover "charm.land/wish/v2/recover"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -43,13 +41,6 @@ func main() {
 
 	host := env("HOST", "0.0.0.0")
 	port := env("PORT", "23234")
-
-	// Styles are rendered by lipgloss's default renderer, which probes this
-	// process's stdout — a log file or pipe under a service manager, never a
-	// TTY. Left to auto-detect it picks the no-color profile and strips every
-	// style from output that is in fact going to a real terminal. activeterm
-	// already refuses non-interactive sessions, so force color on.
-	lipgloss.SetColorProfile(termenv.TrueColor)
 
 	// Prices come from the shop's Square catalog. A failure here is survivable:
 	// the shelf still opens, just without prices.
@@ -156,7 +147,7 @@ func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		user:    s.User(),
 		command: strings.Join(s.Command(), " "),
 	}
-	return m, []tea.ProgramOption{tea.WithAltScreen()}
+	return m, nil
 }
 
 func env(k, def string) string {

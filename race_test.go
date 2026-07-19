@@ -31,7 +31,7 @@ func TestNoCatalogRace(t *testing.T) {
 		m := newModel(100, 40, "b")
 		m.ready = true
 		for i := 0; i < 200; i++ {
-			_ = m.View()
+			_ = m.render()
 		}
 	}()
 	wg.Wait()

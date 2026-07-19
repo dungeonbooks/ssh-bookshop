@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	qrcode "github.com/skip2/go-qrcode"
 )
 
@@ -115,7 +115,7 @@ func TestQRFitsCheckout(t *testing.T) {
 			m.ready = true
 			m.tab, m.step = tabCart, stepPay
 			m.checkout = checkout{URL: tc.url, OrderID: "O1"}
-			out := ansi.ReplaceAllString(m.View(), "")
+			out := ansi.ReplaceAllString(m.render(), "")
 			if !hasQR(out) {
 				t.Errorf("%s at height %d: no QR on the checkout screen", tc.url, h)
 			}
@@ -143,7 +143,7 @@ func TestQRFallsBackWhenTooShort(t *testing.T) {
 		m.ready = true
 		m.tab, m.step = tabCart, stepPay
 		m.checkout = checkout{URL: url, OrderID: "O1"}
-		out := ansi.ReplaceAllString(m.View(), "")
+		out := ansi.ReplaceAllString(m.render(), "")
 		if hasQR(out) {
 			t.Errorf("height %d: QR rendered but cannot fit", h)
 		}
@@ -172,7 +172,7 @@ func TestQRDroppedWhenTooNarrow(t *testing.T) {
 		m.ready = true
 		m.tab, m.step = tabCart, stepPay
 		m.checkout = checkout{URL: url, OrderID: "O1"}
-		out := ansi.ReplaceAllString(m.View(), "")
+		out := ansi.ReplaceAllString(m.render(), "")
 		if got := hasQR(out); got != tc.want {
 			t.Errorf("width %d: QR present = %v, want %v", tc.w, got, tc.want)
 		}

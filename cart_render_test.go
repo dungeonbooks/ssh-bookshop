@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // TestCartRender fills a cart with fake Square data and prints the view, so the
@@ -23,7 +23,7 @@ func TestCartRender(t *testing.T) {
 	m.addToCart(1)
 	m.tab = tabCart
 
-	t.Log("\n" + ansi.ReplaceAllString(m.View(), ""))
+	t.Log("\n" + ansi.ReplaceAllString(m.render(), ""))
 
 	if got := m.cartCount(); got != 3 {
 		t.Errorf("cartCount = %d, want 3", got)
@@ -65,14 +65,14 @@ func TestPayRender(t *testing.T) {
 	m.addToCart(0)
 	m.tab, m.step = tabCart, stepPay
 	m.checkout = checkout{URL: "https://square.link/u/AbCd1234", OrderID: "ORDER123"}
-	t.Log("\n" + ansi.ReplaceAllString(m.View(), ""))
+	t.Log("\n" + ansi.ReplaceAllString(m.render(), ""))
 }
 
 func TestThanksRender(t *testing.T) {
 	m := newModel(100, 30, "k")
 	m.ready = true
 	m.tab, m.step = tabCart, stepThanks
-	t.Log("\n" + ansi.ReplaceAllString(m.View(), ""))
+	t.Log("\n" + ansi.ReplaceAllString(m.render(), ""))
 }
 
 // restoreCatalog puts the shared shelf back after a test edits it, so the suite
