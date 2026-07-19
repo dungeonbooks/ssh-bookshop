@@ -17,6 +17,10 @@ var (
 	gray   = lipgloss.Color("#8A8A8A") // body / secondary text
 	dim    = lipgloss.Color("#5F5F5F") // borders, rules, separators
 	black  = lipgloss.Color("#0B0B0B")
+	// Text on an accent background. taranat.com calls this --accent-ink, and it
+	// is dark for a reason: our white on #e08339 measures 2.4:1, under the 4.5:1
+	// WCAG AA wants. This is 6.4:1.
+	ink = lipgloss.Color("#161616")
 )
 
 var (
@@ -27,7 +31,7 @@ var (
 
 	secHead = lipgloss.NewStyle().Foreground(dim)
 	// selItem is the single focused element: an accent block, like terminal.shop.
-	selItem = lipgloss.NewStyle().Background(accent).Foreground(black).Bold(true)
+	selItem = lipgloss.NewStyle().Background(accent).Foreground(ink).Bold(true)
 	romItem = lipgloss.NewStyle().Foreground(gray)
 	navSep  = lipgloss.NewStyle().Foreground(dim)
 
