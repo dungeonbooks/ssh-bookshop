@@ -34,6 +34,12 @@ func main() {
 		checkShelf(os.Args[2:])
 		return
 	}
+	// -sweep deletes abandoned payment links once and exits. The server does
+	// this on a timer too; this is for running it by hand.
+	if len(os.Args) > 1 && os.Args[1] == "-sweep" {
+		sweepShelf()
+		return
+	}
 
 	host := env("HOST", "0.0.0.0")
 	port := env("PORT", "23234")
@@ -115,6 +121,13 @@ func main() {
 			done <- nil
 		}
 	}()
+
+	// Abandoned checkouts leave a live payment link behind, and Square's never
+	// expire. Nothing younger than a day is touched, so a shopper still deciding
+	// is safe.
+	sweepCtx, stopSweep := context.WithCancel(context.Background())
+	defer stopSweep()
+	go sweepPeriodically(sweepCtx)
 
 	<-done
 	log.Info("stopping")
