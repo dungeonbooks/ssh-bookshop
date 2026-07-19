@@ -57,6 +57,12 @@ const (
 	leftCol       = 20 // product/menu column in two-column mode
 	bodyMax       = 21 // body area height when the window has room to spare
 	chromeH       = 8  // everything but the body: nav(3), 2 blanks, promo, rule, footer
+	// Rows payView spends around the code on a screen that is showing one:
+	// breadcrumb, blank, blank after the code, caption, url, status. Only valid
+	// as the companion to a rendered QR, so it is what len(qr) is added to when
+	// deciding whether the code fits. A screen that falls back to the bare link
+	// does not spend these.
+	qrChrome = 6
 )
 
 type tab int
@@ -331,13 +337,6 @@ func (m model) dims() (cw, rightW, bodyH int, twoCol bool) {
 		rightW = cw
 	}
 	bodyH = bodyMax
-	// The QR screen is a single centred block, and the code is tall: a sandbox
-	// payment URL is 8 characters longer than a production one, which is enough
-	// to push it past the standard body height. Let that one screen use the
-	// whole window rather than dropping the code.
-	if m.tab == tabCart && m.step == stepPay {
-		bodyH = m.height
-	}
 	// reserve one blank row at the bottom so the footer never sits on the last
 	// line when compressed (terminal.shop caps its block at height-1)
 	if avail := m.height - chromeH - 1; bodyH > avail {
@@ -797,10 +796,11 @@ func (m model) payView(w, h int) string {
 
 	// The URL is the fallback for anyone who can't scan, so it is never what
 	// gets clipped. The QR is dropped instead when the window is too short
-	// for both.
-	const chrome = 6 // breadcrumb, blanks, caption, url, status
+	// for both, or too narrow to draw a full row: lipgloss clips rather than
+	// overflows, and a code missing its right-hand columns still looks like a
+	// code while being impossible to scan.
 	qr := qrLines(m.checkout.URL)
-	if len(qr) > 0 && len(qr)+chrome <= h {
+	if len(qr) > 0 && len(qr)+qrChrome <= h && lipgloss.Width(qr[0]) <= w {
 		for _, line := range qr {
 			fmt.Fprintln(&sb, lipgloss.PlaceHorizontal(w, lipgloss.Center, dValue.Render(line)))
 		}
