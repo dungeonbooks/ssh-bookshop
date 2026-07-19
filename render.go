@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -155,4 +156,14 @@ func truncate(s string, w int) string {
 		used += rw
 	}
 	return b.String() + "…"
+}
+
+// usd prints money the way terminal.shop does, without decimals it does not
+// need. Book prices come from Square and mostly carry cents, so those still
+// show them; shipping and a whole-dollar total do not.
+func usd(cents int64) string {
+	if cents%100 == 0 {
+		return fmt.Sprintf("$%d", cents/100)
+	}
+	return fmt.Sprintf("$%d.%02d", cents/100, cents%100)
 }
