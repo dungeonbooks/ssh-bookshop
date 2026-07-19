@@ -36,7 +36,6 @@ type Book struct {
 	Stock       int    // on-hand at the shop; can go negative when oversold
 	Tracked     bool   // Square keeps a count for this book, so Stock means something
 	Sellable    bool   // in the catalog and either in stock or not inventoried
-	ListCents   int64  // publisher list price, for books we don't stock
 }
 
 // lowStock is where a count stops being reassuring and starts being useful.
@@ -54,14 +53,8 @@ func (b Book) stockNote() string {
 	return fmt.Sprintf("   only %d left", b.Stock)
 }
 
-// Price is what to show. Square is authoritative for anything on our shelf;
-// otherwise fall back to list price, which is what Bookshop.org charges.
-func (b Book) Price() int64 {
-	if b.Cents > 0 {
-		return b.Cents
-	}
-	return b.ListCents
-}
+// Price comes from Square, for the edition we actually sell.
+func (b Book) Price() int64 { return b.Cents }
 
 // attrs is the pipe-joined line under the title: author, then whatever else we
 // actually know. Anything missing is left out rather than shown empty.

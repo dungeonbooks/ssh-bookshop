@@ -26,13 +26,14 @@ var catalog = []Book{
 		Format: "paperback", Pages: 303,
 		Blurb: "Ashtin contained distortions for the Church until he defied it, lost his name, and became Fenrir, a bell ringer. When a distortion swallows his tower, the Church sends a surveyor to contain it.",
 		URL:   "https://www.dungeonbooks.com/product/blessed-is-the-rot-by-sheri-singerling-paperback-/5XCYQAWHIVKO4CA3PFLFNQIA"},
-	// Sold out here, so the link and the price are the deluxe edition
-	// (9781250406811) that Bookshop still carries. ListCents is Ingram's
-	// suggested retail, which is what Bookshop charges.
-	{ISBN: "9781250406828", BookTitle: "The Poet Empress", Author: "Shen Tao", Collection: collBookClub, Month: "2026-03",
-		Format: "deluxe edition", Pages: 432, ListCents: 3299,
+	// The deluxe is the edition we stocked, so it is what Square prices and what
+	// Bookshop is asked for. (taranat.com shows the paperback's cover instead,
+	// because the deluxe's art is a 3/4 render; no covers here, so no conflict.)
+	{ISBN: "9781250406811",
+		BookTitle: "The Poet Empress", Author: "Shen Tao", Collection: collBookClub, Month: "2026-03",
+		Format: "deluxe edition", Pages: 432,
 		Blurb: "Wei Yin offers herself as concubine to a cruel prince to keep her family alive, and lands in a palace on the edge of civil war. To survive she becomes a poet, in a world where women are forbidden to read.",
-		URL:   "https://bookshop.org/a/108216/9781250406811"},
+	},
 	{ISBN: "9781984820716", BookTitle: "The Tainted Cup", Author: "Robert Jackson Bennett", Collection: collBookClub, Month: "2026-02",
 		Format: "paperback", Pages: 406,
 		Blurb: "An impossible death on the Empire's frontier, where leviathan blood warps everything it touches. The detective Ana Dolabra solves it from inside her house, blindfolded, through her altered assistant Din.",
