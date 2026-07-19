@@ -9,17 +9,17 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Palette — mostly grayscale (terminal.shop's restraint) with the dungeonbooks
-// orange used sparingly: hotkeys, links, and the one focused element.
+// Palette — the grays are terminal.shop's exact ANSI 256 indices, so the shelf
+// sits in the same tonal range. The accent stays dungeonbooks orange rather
+// than their teal, and is used sparingly: hotkeys, links, the focused row.
 var (
 	accent = lipgloss.Color("#e08339") // --accent from taranat.com
-	white  = lipgloss.Color("#EEEEEE")
-	gray   = lipgloss.Color("#8A8A8A") // body / secondary text
-	dim    = lipgloss.Color("#5F5F5F") // borders, rules, separators
-	black  = lipgloss.Color("#0B0B0B")
+	white  = lipgloss.Color("231")     // headings, selected text
+	gray   = lipgloss.Color("102")     // body / secondary text
+	dim    = lipgloss.Color("59")      // borders, rules, separators
 	// Text on an accent background. taranat.com calls this --accent-ink, and it
-	// is dark for a reason: our white on #e08339 measures 2.4:1, under the 4.5:1
-	// WCAG AA wants. This is 6.4:1.
+	// is dark for a reason: white on #e08339 measures 2.4:1, under the 4.5:1
+	// WCAG AA wants for normal text. This is 6.4:1.
 	ink = lipgloss.Color("#161616")
 )
 
@@ -29,9 +29,10 @@ var (
 	active   = lipgloss.NewStyle().Foreground(white).Bold(true)
 	inactive = lipgloss.NewStyle().Foreground(gray)
 
-	secHead = lipgloss.NewStyle().Foreground(dim)
+	secHead = lipgloss.NewStyle().Foreground(white)
 	// selItem is the single focused element: an accent block, like terminal.shop.
-	selItem = lipgloss.NewStyle().Background(accent).Foreground(ink).Bold(true)
+	// Dark text on it, not bright: see ink.
+	selItem = lipgloss.NewStyle().Background(accent).Foreground(ink)
 	romItem = lipgloss.NewStyle().Foreground(gray)
 	navSep  = lipgloss.NewStyle().Foreground(dim)
 
@@ -41,8 +42,8 @@ var (
 	dLabel = lipgloss.NewStyle().Foreground(gray)
 	dValue = lipgloss.NewStyle().Foreground(white)
 	dLink  = lipgloss.NewStyle().Foreground(accent).Underline(true)
-	dFree  = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	dBody  = lipgloss.NewStyle().Foreground(lipgloss.Color("#B0B0B0"))
+	dMonth = lipgloss.NewStyle().Foreground(accent).Bold(true)
+	dBody  = lipgloss.NewStyle().Foreground(gray)
 
 	promoStyle = lipgloss.NewStyle().Foreground(gray)
 	ruleStyle  = lipgloss.NewStyle().Foreground(dim)
@@ -89,7 +90,12 @@ type model struct {
 }
 
 func newModel(width, height int, fingerprint string) model {
-	return model{width: width, height: height, fingerprint: fingerprint}
+	m := model{width: width, height: height, fingerprint: fingerprint}
+	// Open on this month's pick — the thing someone connects to see.
+	if i := featured(time.Now()); i >= 0 {
+		m.cursor = i
+	}
+	return m
 }
 
 type readyMsg struct{}
@@ -428,9 +434,12 @@ func (m model) productList(maxRows, colW int) string {
 	rows := []row{}
 	lastColl := ""
 	for i, b := range catalog {
-		if b.Collection != lastColl {
-			rows = append(rows, row{text: " " + secHead.Render("~ "+strings.ToLower(b.Collection)+" ~"), bookIdx: -1})
-			lastColl = b.Collection
+		if coll := section(i); coll != lastColl {
+			if lastColl != "" {
+				rows = append(rows, row{text: "", bookIdx: -1})
+			}
+			rows = append(rows, row{text: " " + secHead.Render("~ "+strings.ToLower(coll)+" ~"), bookIdx: -1})
+			lastColl = coll
 		}
 		name := b.BookTitle
 		if lipgloss.Width(name) > maxw {
@@ -475,15 +484,21 @@ func (m model) productList(maxRows, colW int) string {
 func (m model) detailView(w int) string {
 	b := catalog[m.cursor]
 	var sb strings.Builder
+	// terminal.shop's detail shape: name, attributes on one pipe-joined line,
+	// then the single number that matters, then the description.
 	fmt.Fprintln(&sb, dTitle.Width(w).Render(b.BookTitle))
+
+	attrs := []string{b.Author}
+	if b.ISBN != "" {
+		attrs = append(attrs, b.ISBN)
+	}
+	fmt.Fprintln(&sb, dLabel.Width(w).Render(strings.Join(attrs, " | ")))
 	fmt.Fprintln(&sb)
-	fmt.Fprintf(&sb, "%s %s\n", dLabel.Render("author     "), dValue.Render(b.Author))
-	fmt.Fprintf(&sb, "%s %s, %d\n", dLabel.Render("publisher  "), dValue.Render(b.Publisher), b.Year)
-	fmt.Fprintf(&sb, "%s %s\n", dLabel.Render("collection "), secHead.Render(b.Collection))
-	if b.Free {
-		fmt.Fprintf(&sb, "%s %s\n", dLabel.Render("price      "), dFree.Render("FREE · openly licensed"))
-	} else {
-		fmt.Fprintf(&sb, "%s %s\n", dLabel.Render("isbn       "), dValue.Render(b.ISBN))
+
+	if ml := monthLabel(b.Month); ml != "" {
+		fmt.Fprintln(&sb, dMonth.Render(ml))
+	} else if b.Publisher != "" {
+		fmt.Fprintf(&sb, "%s, %d\n", dValue.Render(b.Publisher), b.Year)
 	}
 	fmt.Fprintln(&sb)
 	fmt.Fprintln(&sb, dBody.Width(w).Render(b.Blurb))
@@ -492,7 +507,7 @@ func (m model) detailView(w int) string {
 		fmt.Fprintln(&sb, dLabel.Render("read free:"))
 		fmt.Fprint(&sb, dLink.Render(b.DownloadURL))
 	} else {
-		fmt.Fprintln(&sb, dLabel.Render("buy on bookshop.org:"))
+		fmt.Fprintln(&sb, dLabel.Render(b.BuyLabel()))
 		fmt.Fprint(&sb, dLink.Render(b.BuyURL()))
 	}
 	return sb.String()
@@ -510,7 +525,7 @@ func (m model) cartView(w int) string {
 		fmt.Fprintf(&sb, "   %s\n", dLink.Render(b.BuyURL()))
 	}
 	fmt.Fprintln(&sb)
-	fmt.Fprint(&sb, dBody.Width(w).Render("Open these links in a browser to check out via Bookshop.org."))
+	fmt.Fprint(&sb, dBody.Width(w).Render("Open these links in a browser to check out at dungeonbooks.com or Bookshop.org."))
 	return sb.String()
 }
 

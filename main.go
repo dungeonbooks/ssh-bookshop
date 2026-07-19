@@ -10,18 +10,27 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 	"github.com/charmbracelet/wish/activeterm"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/charmbracelet/wish/logging"
+	"github.com/muesli/termenv"
 	gossh "golang.org/x/crypto/ssh"
 )
 
 func main() {
 	host := env("HOST", "0.0.0.0")
 	port := env("PORT", "23234")
+
+	// Styles are rendered by lipgloss's default renderer, which probes this
+	// process's stdout — a log file or pipe under a service manager, never a
+	// TTY. Left to auto-detect it picks the no-color profile and strips every
+	// style from output that is in fact going to a real terminal. activeterm
+	// already refuses non-interactive sessions, so force color on.
+	lipgloss.SetColorProfile(termenv.TrueColor)
 
 	s, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort(host, port)),

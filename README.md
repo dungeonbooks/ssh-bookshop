@@ -1,7 +1,7 @@
 # dungeonbooks ssh-bookshop
 
-`ssh` in, browse a curated shelf of seminal computer science books and the Stripe
-Press collection, buy via Bookshop.org affiliate links. Inspired by
+`ssh` in, see what our book club is reading. One shelf: the monthly Sci-Fi &
+Fantasy picks, newest first, with the current month starred. Inspired by
 [`terminal.shop`](https://www.terminal.shop) (`ssh terminal.shop`).
 
 ## How it works
@@ -13,15 +13,14 @@ Press collection, buy via Bookshop.org affiliate links. Inspired by
 - **Identity = SSH public key.** Any key connects (anonymous browse). The key's
   SHA256 fingerprint is captured per session (`main.go:teaHandler`) and is what
   you'd associate with an account at first purchase — same model as terminal.shop.
-- **Affiliate model, no inventory, no payment.** "Buy" hands off to
-  `https://bookshop.org/a/{AffiliateID}/{isbn}`. The affiliate ID (`108216`) and
-  URL shape match marty's `BookshopClient.get_buy_url`
+- **No inventory, no payment.** "Buy" hands off to a URL. Books we stock link to
+  dungeonbooks.com (a sale beats a commission); once a pick sells out it falls
+  back to `https://bookshop.org/a/{AffiliateID}/{isbn}`. The affiliate ID
+  (`108216`) and URL shape match marty's `BookshopClient.get_buy_url`
   (`marty/src/tools/external/bookshop.py`).
-- **Validated links.** Every ISBN in `catalog.go` was checked against
-  `bookshop.org/book/{isbn}` (308 = live), the same way marty's client validates,
-  so affiliate links don't 404.
-- **Free titles** (SICP, OSTEP) are openly licensed and shown with a direct read
-  link instead of a buy link.
+- **This month is featured.** `featured()` matches a pick's `Month` against the
+  current date, so the shelf opens on it and marks it with a star. Resolved per
+  call, not at startup, so a long-running server rolls over on its own.
 
 ## Run
 
@@ -39,12 +38,14 @@ Keys: `↑/↓` move · `enter`/`l` open · `h`/`esc` back · `/` filter · `q` 
 
 - `main.go` — Wish server, middleware stack, per-session key capture.
 - `model.go` — Bubble Tea model: list view + detail view.
-- `catalog.go` — curated catalog, affiliate-link helper, validated ISBNs.
+- `catalog.go` — `Book` type, buy-link resolution, affiliate helper.
+- `bookclub.go` — the shelf itself, plus month formatting and `featured()`.
 
 ## Extending
 
 - **Catalog → DB / API.** Replace the hardcoded `catalog` slice with a query or
-  an OpenLibrary/Google Books fetch; keep the bookshop.org ISBN validation step.
+  a feed fetch; keep a bookshop.org ISBN validation step for anything we don't
+  stock ourselves.
 - **Accounts.** Persist `fingerprint -> account` (Postgres/SQLite) to remember
   carts and order history across sessions.
 - **DRM-free delivery.** Wish ships an `scp` middleware — free/owned titles could
