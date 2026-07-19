@@ -29,6 +29,9 @@ const (
 type squareClient struct {
 	token      string
 	locationID string
+	// baseURL is the API root, including scheme. Overridden in tests to point
+	// at an httptest server; empty means the real Square host.
+	baseURL string
 }
 
 var sq *squareClient
@@ -45,6 +48,14 @@ func squareHost() string {
 	return "connect.squareup.com"
 }
 
+func (c *squareClient) root() string {
+	if c.baseURL != "" {
+		// Paths all start with /, so a trailing slash here would double it.
+		return strings.TrimRight(c.baseURL, "/")
+	}
+	return "https://" + squareHost()
+}
+
 // call is every Square request: auth, version, JSON in and out. Square reports
 // failures in a 200-shaped body as often as by status code, so both are checked.
 func (c *squareClient) call(ctx context.Context, method, path string, body, out any) error {
@@ -59,7 +70,7 @@ func (c *squareClient) call(ctx context.Context, method, path string, body, out 
 		rdr = bytes.NewReader(nil)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, "https://"+squareHost()+path, rdr)
+	req, err := http.NewRequestWithContext(ctx, method, c.root()+path, rdr)
 	if err != nil {
 		return err
 	}
