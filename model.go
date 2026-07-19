@@ -12,7 +12,7 @@ import (
 // Palette — mostly grayscale (terminal.shop's restraint) with the dungeonbooks
 // orange used sparingly: hotkeys, links, and the one focused element.
 var (
-	accent = lipgloss.Color("#FF5C00")
+	accent = lipgloss.Color("#e08339") // --accent from taranat.com
 	white  = lipgloss.Color("#EEEEEE")
 	gray   = lipgloss.Color("#8A8A8A") // body / secondary text
 	dim    = lipgloss.Color("#5F5F5F") // borders, rules, separators
