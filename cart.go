@@ -18,9 +18,8 @@ type cartLine struct {
 }
 
 // cartItem is a cart line frozen for handoff to a background command. Checkout
-// runs off the UI goroutine while Update keeps reading and writing the catalog,
-// so the command is given its own copy of everything it needs rather than an
-// index into shared state.
+// runs off the UI goroutine, so it is given its own copy of everything it needs
+// rather than an index into the shared catalog.
 type cartItem struct {
 	isbn        string
 	variationID string
@@ -32,7 +31,7 @@ type cartItem struct {
 func (m model) snapshotCart() []cartItem {
 	out := make([]cartItem, 0, len(m.cart))
 	for _, l := range m.cart {
-		b := catalog[l.idx]
+		b := m.book(l.idx)
 		out = append(out, cartItem{
 			isbn:        b.ISBN,
 			variationID: b.VariationID,
@@ -115,7 +114,7 @@ func pollPaid(orderID string) tea.Cmd {
 // --- cart maths ------------------------------------------------------------
 
 func (m *model) addToCart(idx int) {
-	b := catalog[idx]
+	b := m.book(idx)
 	// Only books we can actually hand over. Everything else links out to
 	// Bookshop, because offering a cart we can't fulfil would be a lie.
 	if !b.Sellable {
@@ -167,7 +166,7 @@ func (m model) cartCount() int {
 func (m model) cartTotal() int64 {
 	var cents int64
 	for _, l := range m.cart {
-		cents += catalog[l.idx].Cents * int64(l.qty)
+		cents += m.book(l.idx).Cents * int64(l.qty)
 	}
 	return cents
 }

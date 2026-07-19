@@ -111,6 +111,10 @@ type model struct {
 	copied      bool // the current book's link was just copied
 	fingerprint string
 	sess        sessionInfo
+	// fresh is price and stock re-read from Square during this session's
+	// checkout. Kept here rather than written back to the package catalog,
+	// which every other session is reading concurrently.
+	fresh map[string]freshItem
 }
 
 func newModel(width, height int, fingerprint string) model {
@@ -120,6 +124,17 @@ func newModel(width, height int, fingerprint string) model {
 		m.cursor = i
 	}
 	return m
+}
+
+// book returns catalog entry i with anything this session re-read from Square
+// laid over it.
+func (m model) book(i int) Book {
+	b := catalog[i]
+	if f, ok := m.fresh[b.VariationID]; ok {
+		b.Cents, b.Stock = f.cents, f.stock
+		b.Tracked, b.Sellable = !f.untracked, f.sellable
+	}
+	return b
 }
 
 type blinkMsg struct{}
@@ -278,12 +293,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case checkoutMsg:
-		// Apply whatever Square just told us, so the shelf stops lying and a
-		// retry has a chance of succeeding.
-		for i := range catalog {
-			if f, ok := msg.fresh[catalog[i].VariationID]; ok {
-				catalog[i].Cents, catalog[i].Stock = f.cents, f.stock
-				catalog[i].Tracked, catalog[i].Sellable = !f.untracked, f.sellable
+		// Keep whatever Square just told us, so the shelf stops lying and a
+		// retry has a chance of succeeding. Merged rather than replaced: an
+		// earlier checkout's prices stay correct.
+		if len(msg.fresh) > 0 {
+			if m.fresh == nil {
+				m.fresh = make(map[string]freshItem, len(msg.fresh))
+			}
+			for k, v := range msg.fresh {
+				m.fresh[k] = v
 			}
 		}
 		if msg.err != nil {
@@ -644,7 +662,7 @@ func (m model) productList(maxRows, colW int) string {
 }
 
 func (m model) detailView(w int) string {
-	b := catalog[m.cursor]
+	b := m.book(m.cursor)
 	var sb strings.Builder
 	// terminal.shop's detail shape: name, attributes on one pipe-joined line,
 	// then the single number that matters, then the description.
@@ -738,7 +756,7 @@ func (m model) cartView(w, h int) string {
 // quantity controls swap in for spaces of the same width so nothing shifts
 // as the cursor moves.
 func (m model) cartRow(w int, i int, l cartLine) string {
-	b := catalog[l.idx]
+	b := m.book(l.idx)
 	border := boxDim
 	minus, plus := " ", " "
 	if i == m.cartCursor {
