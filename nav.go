@@ -4,9 +4,14 @@ package main
 // plus a column of padding either side, and the leftover is dealt out one column
 // at a time from the left, so the row is always flush with the body below it.
 //
+// cw has to be wide enough for every label at that minimum padding. Below it
+// there is no leftover to deal out and the cells returned overrun cw rather than
+// shrinking to meet it, so the caller checks first: nav() drops to a plain line
+// when fits() fails, and the case never reaches here.
+//
 // alignLogo pins the first cell so the divider after it lands on the detail
 // column edge, which is what keeps the nav's first joint sitting over the
-// two-column split. The columns that moves off the logo cell are taken from, or
+// two-column split. The columns that move off the logo cell are taken from, or
 // handed back to, the cells after it, so the total is unchanged.
 //
 // labels are the cells' rendered widths without padding. The returned slice is
