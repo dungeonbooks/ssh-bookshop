@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to a branch makes the first run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Follows the toolchain in go.mod rather than pinning a version here
+          # that would quietly drift from it.
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          # Assigning from a substitution swallows the exit status, so a broken
+          # gofmt would read as "nothing unformatted". Fail on it explicitly.
+          if ! unformatted="$(gofmt -l .)"; then
+            echo "gofmt failed to run"
+            exit 1
+          fi
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      # -race is the point of this workflow: checkout runs off the UI goroutine,
+      # and the shop takes money, so a data race is not a cosmetic problem.
+      # -count=1 defeats the test cache: a cached pass proves nothing about a
+      # race, which is exactly the kind of failure that only shows up sometimes.
+      - name: test
+        run: go test -count=1 -race ./...
