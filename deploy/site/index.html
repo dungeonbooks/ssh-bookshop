@@ -175,12 +175,6 @@
     max-width: 30rem;
   }
 
-  .mono {
-    font-family: ui-monospace, monospace;
-    -webkit-font-smoothing: antialiased;
-    font-size: .78rem;
-    color: hsl(38 18% 62%);
-  }
 
   @media (max-width: 480px) {
     body { padding-top: 7vh; font-size: 19px; }
@@ -212,40 +206,26 @@
     <h2>what is this?</h2>
     <p>
       a monthly science fiction and fantasy book club at dungeon books, a
-      bookshop in jersey city. the shelf is everything we have picked so far,
-      at the same prices as the store.
+      bookshop in jersey city. the shelf is everything we've picked so far.
+      same prices as the store.
     </p>
 
     <h2>is this secure?</h2>
     <p>
-      yes, and you do not have to take our word for it. ssh never sends your
-      private key anywhere. it proves you hold it by signing a one-time
-      challenge, and we only ever see the public half. that is true of every
-      server you have ever connected to, including this one.
-    </p>
-    <p>
-      we do see your public key, and public keys are correlatable. github
-      publishes everyone's at <span class="mono">github.com/&lt;user&gt;.keys</span>.
-      if you would rather not be identifiable, connect without one.
-    </p>
-    <p>
-      one real rule, and it is not about us: do not use
-      <span class="mono">ssh -A</span> on a server you do not run. agent
-      forwarding lets the far end authenticate as you somewhere else. that is
-      the attack people are picturing when they worry about this.
+      yes. ssh never sends your private key. it proves you hold it by signing a
+      one-time challenge and we only ever see the public half.
     </p>
 
     <h2>do i need a key?</h2>
     <p>
-      no. connect without one and you are anonymous. you can browse and buy
-      either way. we never check it against anything.
+      no. connect without one and you're anonymous. you can browse and buy
+      either way.
     </p>
 
     <h2>what do you store?</h2>
     <p>
-      nothing. there is no database, and the shop cannot write to disk. we do
-      not log your key. buying hands you to square, so your card never comes
-      near us.
+      nothing. there's no database and the shop can't write to disk. we don't
+      log your key. buying hands you to square so we never see your card.
     </p>
   </section>
 </main>
