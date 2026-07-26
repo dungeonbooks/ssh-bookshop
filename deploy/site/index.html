@@ -138,15 +138,17 @@
 
   dl { margin: 0; font-size: .85rem; line-height: 1.8; }
   dt { color: hsl(32 16% 50%); }
-  dd {
-    margin: 0 0 1rem;
-    color: var(--dim);
+  dd { margin: 0 0 1rem; color: var(--dim); }
+  dd:last-child { margin-bottom: 0; }
+
+  /* The fingerprint gets read character by character, so legibility beats
+     period accuracy: antialiased monospace, and allowed to wrap anywhere. */
+  dd.fp {
     font-family: ui-monospace, monospace;
     -webkit-font-smoothing: antialiased;
     font-size: .72rem;
     word-break: break-all;
   }
-  dd:last-child { margin-bottom: 0; }
 
   a { color: var(--dim); text-decoration: none; border-bottom: 1px solid hsl(32 10% 26%); }
   a:hover { color: var(--ember); border-bottom-color: currentColor; }
@@ -169,10 +171,12 @@
   </div>
 
   <dl>
-    <dt>host key</dt>
-    <dd>SHA256:EXv5X+C23tnnR0ftxRP/Iq+3z3rL1ezcpbAy9S+zXLg</dd>
     <dt>the store</dt>
     <dd><a href="https://www.dungeonbooks.com/">dungeonbooks.com</a></dd>
+    <dt>the list</dt>
+    <dd><a href="https://squareup.com/customer-programs/enroll/aJST7ePq1UwZ?utm_source=ssh-shop&amp;utm_medium=website">offers and updates by email</a></dd>
+    <dt>host key</dt>
+    <dd class="fp">SHA256:EXv5X+C23tnnR0ftxRP/Iq+3z3rL1ezcpbAy9S+zXLg</dd>
   </dl>
 </main>
 
