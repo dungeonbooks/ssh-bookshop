@@ -39,16 +39,47 @@ is why the rate limiter matters and why nothing else of ours runs on that box.
 
 The shop takes port 22 so visitors need no `-p`. Admin sshd moves off it, and
 the tidiest place to put it is the tailnet, which takes our own access off the
-public internet entirely:
+public internet entirely.
+
+**`ListenAddress` in `sshd_config` does nothing on Ubuntu 24.04.** It ships with
+`ssh.socket` enabled, so systemd owns the listening socket and sshd never reads
+that directive. Configure the socket instead:
 
 ```sh
-# /etc/ssh/sshd_config
-ListenAddress <tailscale-ip>
-Port 22
+# /etc/systemd/system/ssh.socket.d/tailnet-only.conf
+[Socket]
+# Clear the inherited 0.0.0.0:22 first; ListenStream is additive.
+ListenStream=
+ListenStream=<tailscale-ip>:22
 ```
 
-Reconnect over Tailscale and confirm it works **before** freeing the public
-socket, or the box becomes unreachable.
+```sh
+sudo systemctl daemon-reload && sudo systemctl restart ssh.socket
+```
+
+Arm a revert before making the change, so a mistake undoes itself instead of
+locking everyone out, and cancel it once a **new** connection over the tailnet
+is confirmed working:
+
+```sh
+sudo systemd-run --on-active=300 --unit=sshd-revert /bin/sh -c \
+  "rm -rf /etc/systemd/system/ssh.socket.d && systemctl daemon-reload && systemctl restart ssh.socket"
+# ... verify a fresh tailnet ssh works, then:
+sudo systemctl stop sshd-revert.timer
+```
+
+## The shop cannot bind 0.0.0.0:22
+
+Once sshd holds `<tailscale-ip>:22`, binding `0.0.0.0:22` collides with it and
+the shop dies with `address already in use`. Bind the VNIC's private address
+instead — OCI NATs the public IP to it, so visitors still reach the shop on 22
+while admin ssh keeps 22 on the tailnet:
+
+```sh
+# /etc/systemd/system/ssh-bookshop.service.d/bind-vnic.conf
+[Service]
+Environment=HOST=<vnic-private-ip>
+```
 
 Two firewall layers, and forgetting the second is the classic "port is open but
 it times out": the cloud provider's security list or NSG, and the instance's own
