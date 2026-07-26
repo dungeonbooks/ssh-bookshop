@@ -18,9 +18,11 @@ Fantasy picks, newest first, with the current month starred. Inspired by
   back to `https://bookshop.org/a/{AffiliateID}/{isbn}`. The affiliate ID
   (`108216`) and URL shape match marty's `BookshopClient.get_buy_url`
   (`marty/src/tools/external/bookshop.py`).
-- **This month is featured.** `featured()` matches a pick's `Month` against the
-  current date, so the shelf opens on it and marks it with a star. Resolved per
-  call, not at startup, so a long-running server rolls over on its own.
+- **The newest pick is featured.** `featured()` returns the top of the shelf, so
+  the shop opens on it and marks it with a star. Announcing a pick is what makes
+  it current, and that happens a little before its month starts, so adding it to
+  `catalog` features it right away instead of it waiting for the 1st. Ordering
+  the shelf newest-first is therefore load-bearing, not cosmetic.
 
 ## Run
 

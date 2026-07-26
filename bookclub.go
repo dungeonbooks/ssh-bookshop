@@ -1,7 +1,5 @@
 package main
 
-import "time"
-
 // catalog is the monthly Sci-Fi & Fantasy book club shelf, newest first, and
 // the whole shop: ssh in, see what we're reading. ISBN is the edition we stock,
 // so a cover lookup matches what is on the shelf.
@@ -48,24 +46,30 @@ var catalog = []Book{
 		URL:   "https://www.dungeonbooks.com/product/saltcrop-by-yume-kitasei-hardcover-/SHDDSGUBEE7B2NOCEABTYGVK"},
 }
 
-// featured is the index of this month's pick, or -1 when the shelf has not
-// caught up to the calendar yet. Resolved per call rather than at init so a
-// long-running server rolls over at the month boundary on its own.
-func featured(now time.Time) int {
-	this := now.Format("2006-01")
-	for i, b := range catalog {
-		if b.Month == this {
-			return i
-		}
+// featured is the index of the pick the shop opens on: the newest one on the
+// shelf, which is the top entry. Announcing a pick is what makes it current —
+// we do that a little before its month starts — so adding it here features it,
+// rather than it waiting on the calendar to roll over.
+//
+// This deliberately does not consult the date. Matching Month against today
+// left a pick announced early unfeatured until the 1st, which is the window we
+// most want it visible in. The cost is that a shelf nobody has updated keeps
+// featuring its last pick instead of falling back to nothing, which beats a
+// shop that opens on no book at all.
+//
+// -1 only when there is no shelf.
+func featured() int {
+	if len(catalog) == 0 {
+		return -1
 	}
-	return -1
+	return 0
 }
 
-// section is the list heading a book sits under. This month's pick is lifted
+// section is the list heading a book sits under. The featured pick is lifted
 // out into its own "featured" section, the way terminal.shop separates its
 // featured product from the rest of the shelf.
 func section(i int) string {
-	if i == featured(time.Now()) {
+	if i == featured() {
 		return collFeatured
 	}
 	return catalog[i].Collection

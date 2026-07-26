@@ -58,8 +58,8 @@ type model struct {
 
 func newModel(width, height int, fingerprint string) model {
 	m := model{width: width, height: height, fingerprint: fingerprint, cursorOn: true}
-	// Open on this month's pick — the thing someone connects to see.
-	if i := featured(time.Now()); i >= 0 {
+	// Open on the featured pick — the thing someone connects to see.
+	if i := featured(); i >= 0 {
 		m.cursor = i
 	}
 	return m
