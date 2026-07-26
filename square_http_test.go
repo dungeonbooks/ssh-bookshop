@@ -497,3 +497,123 @@ func TestCreateLinkFulfilment(t *testing.T) {
 		})
 	}
 }
+
+// TestSweepLinksCancelsShippingOrderBeforeDeleting covers the case that used to
+// wedge the sweep. A shipping checkout is created with a SHIPMENT fulfilment and
+// no shipment_details, so Square rejects the write that deleting the link
+// performs until the order is cancelled.
+func TestSweepLinksCancelsShippingOrderBeforeDeleting(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-48 * time.Hour).Format(time.RFC3339)
+
+	cancelled := false
+	var deletedIDs []string
+	c := fakeSquare(t, map[string]func(http.ResponseWriter, *http.Request){
+		"/v2/online-checkout/payment-links": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodDelete {
+				if !cancelled {
+					// What Square really answers while the order is live.
+					io.WriteString(w, `{"errors":[{"code":"MISSING_REQUIRED_PARAMETER",
+						"detail":"Fulfillments of type SHIPMENT must have shipment_details supplied."}]}`)
+					return
+				}
+				deletedIDs = append(deletedIDs, strings.TrimPrefix(r.URL.Path, "/v2/online-checkout/payment-links/"))
+				io.WriteString(w, `{"id":"SHIP"}`)
+				return
+			}
+			io.WriteString(w, `{"payment_links":[{"id":"SHIP","order_id":"O_SHIP","created_at":"`+old+`"}]}`)
+		},
+		"/v2/orders/": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPut {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decoding cancel body: %v", err)
+				}
+				order, _ := body["order"].(map[string]any)
+				if order["state"] != "CANCELED" {
+					t.Errorf("order state = %v, want CANCELED", order["state"])
+				}
+				// The placeholder is the whole point: without it Square rejects
+				// the cancel for the same missing field.
+				fulfilments, _ := order["fulfillments"].([]any)
+				if len(fulfilments) != 1 {
+					t.Fatalf("fulfillments = %v, want one", fulfilments)
+				}
+				f, _ := fulfilments[0].(map[string]any)
+				if f["state"] != "CANCELED" {
+					t.Errorf("fulfilment state = %v, want CANCELED", f["state"])
+				}
+				if _, ok := f["shipment_details"]; !ok {
+					t.Error("cancel omitted shipment_details, which is what Square rejects")
+				}
+				cancelled = true
+				io.WriteString(w, `{"order":{"state":"CANCELED"}}`)
+				return
+			}
+			io.WriteString(w, `{"order":{"state":"DRAFT","version":1,"tenders":[],
+				"fulfillments":[{"uid":"F1","type":"SHIPMENT"}]}}`)
+		},
+	})
+
+	deleted, kept, err := c.sweepLinks(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cancelled {
+		t.Error("link was never cancelled, so the delete could not have succeeded")
+	}
+	if deleted != 1 || kept != 0 {
+		t.Errorf("deleted=%d kept=%d, want 1 and 0", deleted, kept)
+	}
+	if len(deletedIDs) != 1 || deletedIDs[0] != "SHIP" {
+		t.Errorf("deleted %v, want SHIP", deletedIDs)
+	}
+}
+
+// TestSweepLinksOutlivesOneBadLink is the wedge itself: returning on the first
+// failure left every link behind it live however old it got.
+func TestSweepLinksOutlivesOneBadLink(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-48 * time.Hour).Format(time.RFC3339)
+
+	var deletedIDs []string
+	c := fakeSquare(t, map[string]func(http.ResponseWriter, *http.Request){
+		"/v2/online-checkout/payment-links": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodDelete {
+				id := strings.TrimPrefix(r.URL.Path, "/v2/online-checkout/payment-links/")
+				if id == "STUCK" {
+					io.WriteString(w, `{"errors":[{"code":"BAD_REQUEST","detail":"nope"}]}`)
+					return
+				}
+				deletedIDs = append(deletedIDs, id)
+				io.WriteString(w, `{}`)
+				return
+			}
+			io.WriteString(w, `{"payment_links":[
+				{"id":"STUCK","order_id":"O_STUCK","created_at":"`+old+`"},
+				{"id":"FINE","order_id":"O_FINE","created_at":"`+old+`"}
+			]}`)
+		},
+		"/v2/orders/": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPut {
+				io.WriteString(w, `{"errors":[{"code":"BAD_REQUEST","detail":"nope"}]}`)
+				return
+			}
+			io.WriteString(w, `{"order":{"state":"DRAFT","version":1,"tenders":[]}}`)
+		},
+	})
+
+	deleted, kept, err := c.sweepLinks(context.Background(), now)
+	if err == nil {
+		t.Error("want the stuck link reported")
+	}
+	// The stuck link counts as kept: it is still on the shelf, and
+	// deleted+kept has to account for every link walked or the pair stops
+	// describing what is out there. Why it survived is in err.
+	if deleted != 1 || kept != 1 {
+		t.Errorf("deleted=%d kept=%d, want 1 and 1", deleted, kept)
+	}
+	if len(deletedIDs) != 1 || deletedIDs[0] != "FINE" {
+		t.Errorf("deleted %v, want FINE swept despite STUCK failing before it", deletedIDs)
+	}
+}
