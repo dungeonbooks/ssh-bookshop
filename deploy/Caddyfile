@@ -1,0 +1,27 @@
+# A browser reaching shop.dungeonbooks.com should get an explanation, not a
+# hung connection. Same hostname as the SSH shop: port 22 is the shop, 443 is
+# this page.
+#
+# ACME uses HTTP-01, which is why port 80 is open. DNS-01 would avoid that, but
+# it needs a Cloudflare API token sitting on a public-facing box, and a token
+# that can edit our DNS is a worse thing to leak than an open port serving a
+# redirect.
+shop.dungeonbooks.com {
+	root * /var/www/shop
+	file_server
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		# The page is self-contained: no external scripts, styles, or fonts.
+		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; script-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'"
+	}
+
+	# Fonts and the page itself are static and versioned by hand, so a short
+	# cache keeps edits visible without hammering the box.
+	@fonts path /fonts/*
+	header @fonts Cache-Control "public, max-age=604800"
+	header /index.html Cache-Control "public, max-age=300"
+}

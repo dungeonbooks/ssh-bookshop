@@ -36,6 +36,12 @@ A host key is generated at `.ssh/id_ed25519` on first run.
 
 Keys: `↑/↓` move · `enter`/`l` open · `h`/`esc` back · `/` filter · `q` quit.
 
+## Deploy
+
+`deploy/` has the systemd unit and the runbook: why this needs a plain VM rather
+than managed hosting, how port 22 is freed by moving admin sshd to the tailnet,
+and why the host key is permanent once anyone has connected.
+
 ## Files
 
 - `main.go` — Wish server, middleware stack, per-session key capture.
