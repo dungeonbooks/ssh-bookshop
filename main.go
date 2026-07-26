@@ -15,7 +15,6 @@ import (
 	"charm.land/wish/v2"
 	"charm.land/wish/v2/activeterm"
 	"charm.land/wish/v2/bubbletea"
-	"charm.land/wish/v2/logging"
 	"charm.land/wish/v2/ratelimiter"
 	"github.com/charmbracelet/ssh"
 	// Aliased: the package name shadows the recover builtin.
@@ -112,7 +111,7 @@ func main() {
 			wrecover.Middleware(
 				bubbletea.Middleware(teaHandler),
 				activeterm.Middleware(), // require a real interactive terminal
-				logging.Middleware(),
+				sessionLog(),
 				ratelimiter.Middleware(connectionLimiter()),
 			),
 		),
@@ -156,13 +155,9 @@ func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		fp = gossh.FingerprintSHA256(pk)
 		mode = "ssh key"
 	}
-	// Deliberately not logging the fingerprint. Nothing here needs it: the rate
-	// limiter keeps its own buckets in memory, there are no orders to trace
-	// back, and no support workflow that identifies a returning visitor. A
-	// public key is correlatable against GitHub, so writing one to the journal
-	// turns a browse into a retained record of who was looking. mode is the
-	// part that is actually useful and identifies nobody.
-	log.Info("session", "user", s.User(), "mode", mode)
+	// Nothing is logged here. sessionLog already records the one useful bit,
+	// whether a key was offered, and it does so without the fingerprint, the
+	// address, or the account name the client happened to send.
 
 	m := newModel(pty.Window.Width, pty.Window.Height, fp)
 	m.sess = sessionInfo{
