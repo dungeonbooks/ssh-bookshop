@@ -123,19 +123,6 @@
   }
   .cmd code::before { content: "$ "; color: var(--dim); text-shadow: none; }
 
-  .caret {
-    display: inline-block;
-    width: .55em;
-    height: 1em;
-    margin-left: .15em;
-    vertical-align: -.13em;
-    background: var(--gold);
-    box-shadow: 0 0 8px hsl(45 90% 55% / .6);
-    animation: blink 1.2s steps(1) infinite;
-  }
-  @keyframes blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
-
   button {
     font-family: "RuneScape Plain", ui-monospace, monospace;
     font-size: .85rem;
@@ -177,7 +164,7 @@
   <p class="lede">a monthly science fiction and fantasy book club.</p>
 
   <div class="cmd">
-    <code id="cmd">ssh shop.dungeonbooks.com</code><span class="caret" aria-hidden="true"></span>
+    <code id="cmd">ssh shop.dungeonbooks.com</code>
     <button id="copy" type="button">copy</button>
   </div>
 
