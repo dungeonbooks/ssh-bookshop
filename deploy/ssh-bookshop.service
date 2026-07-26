@@ -1,0 +1,54 @@
+[Unit]
+Description=Dungeon Books SSH shop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bookshop
+Group=bookshop
+WorkingDirectory=/opt/ssh-bookshop
+
+# Secrets live here, not in this unit: SQUARE_ACCESS_TOKEN, SQUARE_LOCATION_ID,
+# SSH_HOST_KEY. Root-owned and 0400 so the service user can be denied read on
+# everything else it does not need.
+EnvironmentFile=/etc/ssh-bookshop.env
+
+# The shop is the only thing on 22. Admin sshd is bound to the tailnet
+# interface, so this does not collide with it.
+Environment=HOST=0.0.0.0
+Environment=PORT=22
+
+# Storage here is persistent, so ephemeralStorage() is false and a missing
+# SSH_HOST_KEY would only warn, then generate a throwaway key at .ssh/id_ed25519
+# and change the shop's identity. Say it is ephemeral to make the miss fatal.
+Environment=EPHEMERAL_STORAGE=1
+
+ExecStart=/opt/ssh-bookshop/ssh-bookshop
+Restart=always
+RestartSec=2
+
+# Binding 22 as a non-root user. This is the only elevated capability it gets.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+# The shop never writes to disk. If it is ever compromised, none of this helps
+# an attacker reach hermes or anything else on the box.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target
