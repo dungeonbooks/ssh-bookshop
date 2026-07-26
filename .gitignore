@@ -11,6 +11,7 @@
 # go
 *.test
 *.out
+*.profraw
 
 # terminal graph workspace, created on opening the project
 /.terminalgraph/

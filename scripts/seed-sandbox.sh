@@ -24,6 +24,7 @@ host=connect.squareupsandbox.com
 
 # isbn|title|cents
 books=(
+    "9780316568654|The Last Contract of Isako by Fonda Lee (Paperback)|1999"
     "9780593818947|Daughter of Crows by Mark Lawrence (Hardcover)|3000"
     "9781250376794|Sublimation by Isabel J. Kim (Hardcover) SIGNED|2899"
     "9781967967063|Burn the Sea by Mona Tewari (Paperback)|1995"
