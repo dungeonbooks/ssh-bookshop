@@ -204,9 +204,13 @@ func (m model) qtyInCart(idx int) int {
 // a real sale. An order we cannot read is not permission to cancel it either.
 //
 // Fire and forget: the shopper is already waiting on the new link, and tidying
-// up the old one is never worth making them watch it happen. A failure here
-// costs nothing, because the link is old and unpaid and the sweeper will take
-// another run at it.
+// up the old one is never worth making them watch it happen.
+//
+// A failure is not free, though. This link is seconds old, so the sweeper will
+// not consider it until it passes sweepAfter, and it stays live and payable for
+// that whole day: exactly the window this is meant to close, reopened for one
+// shopper. Accepted rather than retried because the alternative is holding up
+// the pay screen on cleanup, and the sweeper does eventually get it.
 func discardLink(c checkout) tea.Cmd {
 	if c.LinkID == "" {
 		return nil
