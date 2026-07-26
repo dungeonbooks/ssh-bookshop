@@ -9,6 +9,10 @@ import "time"
 // URL is where a reader should buy it: dungeonbooks.com while we have it, a
 // bookshop.org affiliate link once we sell out.
 var catalog = []Book{
+	{ISBN: "9780316568654", BookTitle: "The Last Contract of Isako", Author: "Fonda Lee", Collection: collBookClub, Month: "2026-08",
+		Format: "paperback", Pages: 528, WeightGrams: 576,
+		Blurb: "Isako is a legendary swordswoman planning to walk out into the ice and die well. The last contract she takes puts her opposite Martim, the worst apprentice she ever trained, who has climbed to the top of a company that can buy a life or end one.",
+		URL:   "https://www.dungeonbooks.com/product/the-last-contract-of-isako-by-fonda-lee-paperback-/GB5UWQBUBNLLCSREFBVH3636"},
 	{ISBN: "9780593818947", BookTitle: "Daughter of Crows", Author: "Mark Lawrence", Collection: collBookClub, Month: "2026-07",
 		Format: "hardcover", Pages: 410, WeightGrams: 553,
 		Blurb: "The Academy of Kindness takes in a hundred girls a year and graduates three. One survivor has to exhume her own past. First in a new series from the author of the Broken Empire.",
