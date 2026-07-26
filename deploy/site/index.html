@@ -8,6 +8,12 @@
 <meta property="og:title" content="dungeon books">
 <meta property="og:description" content="A monthly science fiction and fantasy book club, open over SSH.">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://shop.dungeonbooks.com/">
+<meta property="og:image" content="https://shop.dungeonbooks.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Dungeon Books. A monthly science fiction and fantasy book club.">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🕯️</text></svg>">
 <style>
   @font-face {
@@ -142,10 +148,14 @@
   button:hover { color: var(--ember); text-shadow: 0 0 8px hsl(30 100% 50% / .5); }
   button:focus-visible { outline: 1px solid var(--dim); outline-offset: 3px; }
 
-  dl { margin: 0; font-size: .85rem; line-height: 1.8; }
-  dt { color: hsl(32 16% 50%); }
-  dd { margin: 0 0 1rem; color: var(--dim); }
-  dd:last-child { margin-bottom: 0; }
+  dl { margin: 0; line-height: 1.8; }
+  dt {
+    font-size: 1rem;
+    color: var(--gold);
+    margin-top: 2.4rem;
+  }
+  dt:first-child { margin-top: 0; }
+  dd { margin: 0; color: var(--dim); font-size: .92rem; }
 
   /* The fingerprint gets read character by character, so legibility beats
      period accuracy: antialiased monospace, and allowed to wrap anywhere. */

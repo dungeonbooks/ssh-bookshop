@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -615,5 +616,81 @@ func TestSweepLinksOutlivesOneBadLink(t *testing.T) {
 	}
 	if len(deletedIDs) != 1 || deletedIDs[0] != "FINE" {
 		t.Errorf("deleted %v, want FINE swept despite STUCK failing before it", deletedIDs)
+	}
+}
+
+// Backing out of checkout and starting again used to leave the first link live
+// and payable while the shop watched only the second. discardLink is what closes
+// that, so it has to actually issue the delete.
+func TestDiscardLinkDeletesAnAbandonedLink(t *testing.T) {
+	var deleted []string
+	sq = fakeSquare(t, map[string]func(http.ResponseWriter, *http.Request){
+		"/v2/online-checkout/payment-links/": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodDelete {
+				deleted = append(deleted, path.Base(r.URL.Path))
+			}
+			io.WriteString(w, `{}`)
+		},
+		"/v2/orders/": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"order":{"state":"DRAFT","version":1,"tenders":[]}}`)
+		},
+	})
+	t.Cleanup(func() { sq = nil })
+
+	discardLink(checkout{LinkID: "ABANDONED", OrderID: "O1"})()
+
+	if len(deleted) != 1 || deleted[0] != "ABANDONED" {
+		t.Errorf("deleted %v, want the abandoned link", deleted)
+	}
+}
+
+// The shopper may have paid the link a moment before walking away from it.
+// Deleting cancels the order, so a paid one has to be left exactly alone.
+func TestDiscardLinkLeavesAPaidOrder(t *testing.T) {
+	var touched []string
+	sq = fakeSquare(t, map[string]func(http.ResponseWriter, *http.Request){
+		"/v2/online-checkout/payment-links/": func(w http.ResponseWriter, r *http.Request) {
+			touched = append(touched, r.Method)
+			io.WriteString(w, `{}`)
+		},
+		"/v2/orders/": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"order":{"state":"COMPLETED","version":2,"tenders":[{"id":"T1"}]}}`)
+		},
+	})
+	t.Cleanup(func() { sq = nil })
+
+	discardLink(checkout{LinkID: "PAID", OrderID: "O1"})()
+
+	if len(touched) != 0 {
+		t.Errorf("touched the link %v, want a paid order left alone", touched)
+	}
+}
+
+// An order we cannot read is not permission to cancel it, the same rule the
+// sweeper follows.
+func TestDiscardLinkLeavesAnUnreadableOrder(t *testing.T) {
+	var touched []string
+	sq = fakeSquare(t, map[string]func(http.ResponseWriter, *http.Request){
+		"/v2/online-checkout/payment-links/": func(w http.ResponseWriter, r *http.Request) {
+			touched = append(touched, r.Method)
+			io.WriteString(w, `{}`)
+		},
+		"/v2/orders/": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"errors":[{"code":"INTERNAL_SERVER_ERROR","detail":"nope"}]}`)
+		},
+	})
+	t.Cleanup(func() { sq = nil })
+
+	discardLink(checkout{LinkID: "UNKNOWN", OrderID: "O1"})()
+
+	if len(touched) != 0 {
+		t.Errorf("touched the link %v, want an unreadable order left alone", touched)
+	}
+}
+
+// Nothing to discard on the first attempt, and no request should go out for it.
+func TestDiscardLinkIsNoOpWithoutALink(t *testing.T) {
+	if cmd := discardLink(checkout{}); cmd != nil {
+		t.Error("want no command when there is no previous link")
 	}
 }

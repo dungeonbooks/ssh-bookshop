@@ -191,3 +191,43 @@ func (m model) qtyInCart(idx int) int {
 	}
 	return 0
 }
+
+// discardLink deletes a payment link the shopper walked away from, so backing
+// out of checkout and starting again does not leave two live links for one
+// cart. Square links never expire, so the abandoned one stays payable: if the
+// buyer had already copied or scanned it, paying it charges them against an
+// order the shop is no longer watching, with whatever fulfilment they have
+// since changed their mind about.
+//
+// Paid orders are left alone, checked the same way the sweeper checks them.
+// Deleting a link cancels its order, and an order that was paid a moment ago is
+// a real sale. An order we cannot read is not permission to cancel it either.
+//
+// Fire and forget: the shopper is already waiting on the new link, and tidying
+// up the old one is never worth making them watch it happen.
+//
+// A failure is not free, though. This link is seconds old, so the sweeper will
+// not consider it until it passes sweepAfter, and it stays live and payable for
+// that whole day: exactly the window this is meant to close, reopened for one
+// shopper. Accepted rather than retried because the alternative is holding up
+// the pay screen on cleanup, and the sweeper does eventually get it.
+func discardLink(c checkout) tea.Cmd {
+	if c.LinkID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if sq == nil {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), squareTimeout)
+		defer cancel()
+		if c.OrderID != "" {
+			paid, err := sq.paid(ctx, c.OrderID)
+			if err != nil || paid {
+				return nil
+			}
+		}
+		_ = sq.deleteLink(ctx, paymentLink{ID: c.LinkID, OrderID: c.OrderID})
+		return nil
+	}
+}
