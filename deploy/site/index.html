@@ -149,11 +149,10 @@
   a { color: var(--dim); text-decoration: none; border-bottom: 1px solid hsl(32 10% 26%); }
   a:hover { color: var(--ember); border-bottom-color: currentColor; }
 
-  /* Answers sit below the fold on purpose. Anyone ready to connect copies the
-     command and leaves without scrolling; anyone suspicious scrolls and finds
-     the honest version. Hiding this behind a second page would put it one
-     click away from exactly the people who need it. */
-  .faq { margin-top: 7rem; }
+  /* Enough of a gap to separate the answers from the footnotes above, without
+     the dead band that 7rem left. The page still opens on the wordmark and the
+     command; the answers just start closer behind them. */
+  .faq { margin-top: 3.25rem; }
 
   .faq h2 {
     font-family: "RuneScape Plain", ui-monospace, monospace;
