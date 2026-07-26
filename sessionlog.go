@@ -10,7 +10,7 @@ import (
 
 // sessionLog replaces wish's logging middleware, which writes a line like
 //
-//	panat connect 74.102.100.8:57712 false [] 0 0 SSH-2.0-OpenSSH_10.0p2 Debian-7+deb13u4
+//	someuser connect 203.0.113.7:57712 false [] 0 0 SSH-2.0-OpenSSH_10.0p2 Debian-7+deb13u4
 //
 // That is the visitor's address, the local account name their client sent, and
 // a version string precise enough to name their distribution and package
@@ -43,9 +43,14 @@ func sessionLog() wish.Middleware {
 				"size", pty.Window.Width, "x", pty.Window.Height,
 			)
 
-			next(s)
+			// Deferred so a panic downstream still records how long the session
+			// ran. wrecover catches those above us, so a plain call after
+			// next(s) would drop the line in the one case worth reading it.
+			defer func() {
+				log.Info("disconnect", "took", time.Since(start).Round(time.Millisecond))
+			}()
 
-			log.Info("disconnect", "took", time.Since(start).Round(time.Millisecond))
+			next(s)
 		}
 	}
 }
