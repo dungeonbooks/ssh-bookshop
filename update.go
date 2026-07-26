@@ -197,12 +197,18 @@ func (m model) advance() (tea.Model, tea.Cmd) {
 	case m.tab == tabCart && m.step == stepFulfil:
 		m.step = stepPay
 		m.checkoutErr = nil
+		// The link from a previous attempt goes with the model field that held
+		// it. Dropping the ID here and asking Square for another one left both
+		// live, and only the newer one watched: the idempotency key is fresh
+		// per attempt on purpose, so Square has no reason to collapse them.
+		abandoned := m.checkout
 		m.checkout = checkout{}
 		ship, _ := m.shipping()
 		if m.fulfil == fulfilPickup {
 			ship = 0
 		}
 		return m, tea.Batch(
+			discardLink(abandoned),
 			startCheckout(m.snapshotCart(), m.fulfil, ship, newIdempotencyKey()),
 			blinkTick(),
 		)
