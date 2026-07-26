@@ -3,6 +3,7 @@ package main
 import (
 	"net"
 	"sync"
+	"time"
 
 	"golang.org/x/time/rate"
 
@@ -15,54 +16,84 @@ import (
 // Connection limits: a blast door against a script opening sessions in a loop,
 // not fairness between shoppers.
 //
-// wish's own limiter keys on remote IP, which is the right key almost anywhere
-// and the wrong one here: Railway's TCP proxy is layer 4 with no PROXY protocol,
-// so every visitor arrives from the same address and the whole shop shares a
-// single bucket. A limit tight enough to stop one abuser would shut the shop for
-// everyone, which is why these were loose.
+// Three buckets, and a session needs room in all of them.
 //
-// Keying on the SSH public key fingerprint restores a bucket per visitor. It
-// does not stop a determined abuser, who can mint a fresh keypair for free, so
-// the shop-wide ceiling stays underneath as the bound key rotation cannot
-// escape. Per-key is for fairness; global is for survival.
+// Per public key is fairness. It gives every visitor their own allowance so one
+// busy client cannot spend anyone else's. On its own it stops nobody, because a
+// fresh keypair is free and arrives with a full bucket.
+//
+// Per source address is what actually bounds key rotation. Minting keys costs an
+// abuser nothing; obtaining addresses costs them something. Without this layer
+// a single rotating client can drain the shop-wide bucket and every honest
+// visitor is refused on a shop with capacity to spare. Kept deliberately loose,
+// because CGNAT puts unrelated shoppers behind one address and this is a bound,
+// not a quota.
+//
+// Shop-wide is survival, the ceiling nothing gets past.
+//
+// The address layer is only meaningful because the shop takes connections
+// directly. Behind Railway's layer 4 proxy, which carried no PROXY protocol,
+// every visitor arrived from the same address and an address bucket would have
+// been a second shop-wide bucket wearing a disguise.
 const (
 	keyRate  = 1 // sustained connections/sec for one public key
 	keyBurst = 5 // a few quick reconnects are normal
 
-	// Left exactly where the IP-keyed limit was, since on Railway that was
-	// already the shop-wide figure. Per-key limiting is added on top rather
-	// than traded against it, so nothing here loosens.
+	// Loose on purpose: this has to sit above what a shared NAT of real
+	// shoppers produces, while still being far below the shop-wide ceiling so
+	// that one address cannot reach it.
+	addrRate  = 3
+	addrBurst = 12
+
 	shopRate  = 10
 	shopBurst = 30
 
-	connCache = 1024 // distinct fingerprints tracked
+	keyCache  = 1024 // distinct fingerprints tracked
+	addrCache = 1024 // distinct source addresses tracked
 )
 
-// keyedLimiter allows a session when both its own key's bucket and the shop-wide
-// bucket have room.
+// bucket is the shape of the per-visitor limiters, held as data so a test can
+// open one layer right up and watch another in isolation.
+type bucket struct {
+	r     rate.Limit
+	burst int
+}
+
+// keyedLimiter allows a session when its key's bucket, its address's bucket and
+// the shop-wide bucket all have room.
 type keyedLimiter struct {
-	mu    sync.Mutex
-	cache *lru.Cache[string, *rate.Limiter]
-	shop  *rate.Limiter
+	mu      sync.Mutex
+	keys    *lru.Cache[string, *rate.Limiter]
+	addrs   *lru.Cache[string, *rate.Limiter]
+	keyLim  bucket
+	addrLim bucket
+	shop    *rate.Limiter
 }
 
 func connectionLimiter() ratelimiter.RateLimiter {
-	cache, err := lru.New[string, *rate.Limiter](connCache)
-	if err != nil {
-		// Only reachable by editing connCache to a non-positive value, which is
-		// a programming error rather than a runtime condition. Failing here says
-		// so; swallowing it returns a nil cache that panics on the first
-		// connection instead, a long way from the cause.
-		panic("connection limiter cache: " + err.Error())
-	}
 	return &keyedLimiter{
-		cache: cache,
-		shop:  rate.NewLimiter(shopRate, shopBurst),
+		keys:    newLimiterCache(keyCache),
+		addrs:   newLimiterCache(addrCache),
+		keyLim:  bucket{keyRate, keyBurst},
+		addrLim: bucket{addrRate, addrBurst},
+		shop:    rate.NewLimiter(shopRate, shopBurst),
 	}
 }
 
+func newLimiterCache(size int) *lru.Cache[string, *rate.Limiter] {
+	cache, err := lru.New[string, *rate.Limiter](size)
+	if err != nil {
+		// Only reachable by editing a cache size to a non-positive value, which
+		// is a programming error rather than a runtime condition. Failing here
+		// says so; swallowing it returns a nil cache that panics on the first
+		// connection instead, a long way from the cause.
+		panic("connection limiter cache: " + err.Error())
+	}
+	return cache
+}
+
 func (l *keyedLimiter) Allow(s ssh.Session) error {
-	if !l.allow(sessionKey(s)) {
+	if !l.allow(sessionKey(s), addrKey(s.RemoteAddr())) {
 		return ratelimiter.ErrRateLimitExceeded
 	}
 	return nil
@@ -70,26 +101,57 @@ func (l *keyedLimiter) Allow(s ssh.Session) error {
 
 // allow is the decision without the session around it, so the buckets can be
 // tested without standing up an SSH server.
-func (l *keyedLimiter) allow(key string) bool {
-	// Per-key first: it is the common rejection, and checking it first means a
-	// noisy client spends its own tokens rather than the shop's.
-	if !l.limiterFor(key).Allow() {
+//
+// Tokens are reserved rather than spent, and a later refusal hands back what the
+// earlier layers took. Otherwise a visitor refused by the ceiling would still be
+// charged for it, and a flood would quietly drain the personal allowance of
+// every shopper it turned away — punishing them twice for someone else's abuse.
+func (l *keyedLimiter) allow(key, addr string) bool {
+	now := time.Now()
+
+	// Narrowest bucket first, so a noisy client is refused on its own allowance
+	// before it can disturb anything shared.
+	keyRes, ok := reserve(l.limiterFor(l.keys, key, l.keyLim), now)
+	if !ok {
 		return false
 	}
-	return l.shop.Allow()
+	addrRes, ok := reserve(l.limiterFor(l.addrs, addr, l.addrLim), now)
+	if !ok {
+		keyRes.CancelAt(now)
+		return false
+	}
+	if _, ok := reserve(l.shop, now); !ok {
+		addrRes.CancelAt(now)
+		keyRes.CancelAt(now)
+		return false
+	}
+	return true
 }
 
-// limiterFor gets or creates the bucket for one key. Locked because get-then-add
-// is not atomic, and two connections arriving together would otherwise each
-// build a limiter with the second discarding the first's spent tokens.
-func (l *keyedLimiter) limiterFor(key string) *rate.Limiter {
+// reserve takes a token only if one is free right now. rate.Limiter has no way
+// to ask without taking, so this reserves and hands it straight back when the
+// answer is no — which is what Allow does internally, minus the ability to undo
+// it later.
+func reserve(l *rate.Limiter, now time.Time) (*rate.Reservation, bool) {
+	r := l.ReserveN(now, 1)
+	if !r.OK() || r.DelayFrom(now) > 0 {
+		r.CancelAt(now)
+		return nil, false
+	}
+	return r, true
+}
+
+// limiterFor gets or creates one bucket. Locked because get-then-add is not
+// atomic, and two connections arriving together would otherwise each build a
+// limiter with the second discarding the first's spent tokens.
+func (l *keyedLimiter) limiterFor(c *lru.Cache[string, *rate.Limiter], key string, b bucket) *rate.Limiter {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if lim, ok := l.cache.Get(key); ok {
+	if lim, ok := c.Get(key); ok {
 		return lim
 	}
-	lim := rate.NewLimiter(keyRate, keyBurst)
-	l.cache.Add(key, lim)
+	lim := rate.NewLimiter(b.r, b.burst)
+	c.Add(key, lim)
 	return lim
 }
 
@@ -103,15 +165,25 @@ func sessionKey(s ssh.Session) string {
 	return addrKey(s.RemoteAddr())
 }
 
-// addrKey reduces an address to the part that identifies a visitor. The port
-// has to go: it is ephemeral, so keying on it would hand every reconnect a
-// fresh bucket, and worse, churn a thousand single-use entries through the LRU
-// and evict the fingerprints of everyone actually shopping.
+// addrKey reduces an address to the part that identifies a visitor.
+//
+// The port has to go: it is ephemeral, so keying on it would hand every
+// reconnect a fresh bucket, and worse, churn a thousand single-use entries
+// through the LRU and evict the addresses of everyone actually shopping.
+//
+// IPv6 collapses to its /64. A host is routinely handed a whole /64 and can pick
+// a new address inside it for free, so keying on the full address would make
+// address rotation as cheap as key rotation and leave this layer bounding
+// nothing.
 func addrKey(a net.Addr) string {
-	if tcp, ok := a.(*net.TCPAddr); ok {
-		return tcp.IP.String()
+	tcp, ok := a.(*net.TCPAddr)
+	if !ok {
+		// Not TCP, so there may be no port to strip. Better a key that is too
+		// specific than none at all.
+		return a.String()
 	}
-	// Not TCP, so there may be no port to strip. Better a key that is too
-	// specific than none at all.
-	return a.String()
+	if v4 := tcp.IP.To4(); v4 != nil {
+		return v4.String()
+	}
+	return tcp.IP.Mask(net.CIDRMask(64, 128)).String() + "/64"
 }
