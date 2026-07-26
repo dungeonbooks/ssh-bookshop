@@ -40,9 +40,7 @@
     margin: 0;
     min-height: 100%;
     padding: 11vh 1.5rem 5rem;
-    background:
-      radial-gradient(58rem 32rem at 50% -2%, hsl(30 45% 13%) 0%, transparent 70%),
-      var(--bg);
+    background: var(--bg);
     color: var(--ink);
     /* The pixel face is the nostalgia. Smoothing off so it stays crisp
        instead of being antialiased into a modern webfont. */
@@ -55,20 +53,18 @@
     position: relative;
   }
 
-  /* CRT scanlines. Kept faint enough to read as texture rather than costume. */
+  /* The ember glow is pinned to the viewport rather than painted on the body.
+     On the body it was anchored to the top of the document, so once the page
+     grew past one screen it scrolled away while the vignette below stayed put,
+     and the two disagreed on the way down. Fixed, both layers hold together at
+     any page length. */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
-    z-index: 2;
-    background: repeating-linear-gradient(
-      0deg,
-      hsl(0 0% 0% / .22) 0px,
-      hsl(0 0% 0% / .22) 1px,
-      transparent 1px,
-      transparent 3px
-    );
+    z-index: 0;
+    background: radial-gradient(58rem 32rem at 50% -2%, hsl(30 45% 13%) 0%, transparent 70%);
   }
 
   /* Corner falloff, the way a tube dims off-axis. */
@@ -224,8 +220,8 @@
 
     <h2>what do you store?</h2>
     <p>
-      nothing. there's no database and the shop can't write to disk. we don't
-      log your key. buying hands you to square so we never see your card.
+      nothing. there's no database and we don't log your key or your address.
+      buying hands you to square so we never see your card.
     </p>
   </section>
 </main>
