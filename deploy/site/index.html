@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dungeon books</title>
-<meta name="description" content="ssh shop.dungeonbooks.com">
+<meta name="description" content="A monthly science fiction and fantasy book club. The shelf is only open over SSH.">
 <meta property="og:title" content="dungeon books">
-<meta property="og:description" content="ssh shop.dungeonbooks.com">
+<meta property="og:description" content="A monthly science fiction and fantasy book club, open over SSH.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🕯️</text></svg>">
 <style>
@@ -22,10 +22,13 @@
   }
 
   :root {
-    --bg: hsl(0 0% 7%);
-    --ink: hsl(0 0% 78%);
+    --bg: hsl(24 12% 7%);
+    --ink: hsl(36 12% 82%);
     --gold: hsl(45 65% 58%);
-    --dim: hsl(0 0% 34%);
+    --ember: hsl(30 100% 56%);
+    --dim: hsl(30 8% 40%);
+    --edge: hsl(0 0% 0%);
+    --panel: hsl(24 10% 11%);
   }
 
   * { box-sizing: border-box; }
@@ -35,37 +38,49 @@
   body {
     margin: 0;
     min-height: 100%;
-    padding: 12vh 1.5rem 4rem;
-    background: var(--bg);
+    padding: 11vh 1.5rem 5rem;
+    background:
+      radial-gradient(60rem 34rem at 50% 0%, hsl(30 40% 12%) 0%, transparent 70%),
+      var(--bg);
     color: var(--ink);
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 15px;
-    line-height: 2;
+    line-height: 1.85;
     -webkit-font-smoothing: antialiased;
   }
 
-  main {
-    max-width: 34rem;
-    margin: 0 auto;
-  }
+  main { max-width: 33rem; margin: 0 auto; }
 
   h1 {
     font-family: "RuneScape Quill", serif;
     font-weight: 400;
-    font-size: 2.1rem;
-    letter-spacing: .02em;
+    font-size: clamp(2.3rem, 9vw, 3rem);
     color: var(--gold);
-    margin: 0 0 3rem;
+    margin: 0 0 .1rem;
     line-height: 1;
+    text-shadow: 0 0 26px hsl(30 100% 50% / .22);
   }
 
-  p { margin: 0 0 2rem; }
+  .rule {
+    height: 1px;
+    background: linear-gradient(90deg, hsl(45 65% 58% / .5), transparent);
+    margin: 1.4rem 0 1.8rem;
+  }
 
+  .lede { margin: 0 0 2.2rem; color: var(--ink); }
+  .lede span { display: block; color: var(--dim); }
+
+  /* One piece of OSRS chrome, kept for the thing you came here to copy. */
   .cmd {
     display: flex;
-    align-items: baseline;
+    align-items: center;
+    justify-content: space-between;
     gap: 1rem;
-    margin: 0 0 3rem;
+    background: var(--panel);
+    border: 2px solid var(--edge);
+    box-shadow: inset 0 0 0 1px hsl(36 14% 22%);
+    padding: .85rem 1rem;
+    margin: 0 0 2.4rem;
   }
 
   .cmd code {
@@ -73,43 +88,48 @@
     font-size: 1.05rem;
     word-break: break-all;
   }
+  .cmd code::before { content: "$ "; color: var(--dim); }
 
   button {
     font: inherit;
-    font-size: .8rem;
+    font-size: .78rem;
     color: var(--dim);
     background: none;
     border: 0;
-    padding: 0;
+    padding: .1rem .2rem;
     cursor: pointer;
-    text-transform: lowercase;
+    flex-shrink: 0;
   }
-  button:hover { color: var(--ink); }
+  button:hover { color: var(--ember); }
   button:focus-visible { outline: 1px solid var(--dim); outline-offset: 3px; }
 
-  dl {
-    margin: 0;
-    font-size: .8rem;
-    color: var(--dim);
-    line-height: 1.9;
+  dl { margin: 0; font-size: .78rem; color: var(--dim); line-height: 1.95; }
+  dt {
+    font-family: "RuneScape Plain", ui-monospace, monospace;
+    font-size: .9rem;
+    color: hsl(30 12% 52%);
   }
-  dt { display: none; }
-  dd { margin: 0; word-break: break-all; }
+  dd { margin: 0 0 .9rem; word-break: break-all; }
+  dd:last-child { margin-bottom: 0; }
 
-  a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--dim); }
-  a:hover { color: var(--ink); }
+  a { color: var(--dim); text-decoration: none; border-bottom: 1px solid hsl(30 8% 26%); }
+  a:hover { color: var(--ember); border-bottom-color: currentColor; }
 
   @media (max-width: 480px) {
-    body { padding-top: 8vh; }
-    .cmd { flex-direction: column; gap: .25rem; }
+    body { padding-top: 7vh; }
+    .cmd { flex-direction: column; align-items: flex-start; gap: .4rem; }
   }
 </style>
 </head>
 <body>
 <main>
   <h1>dungeon books</h1>
+  <div class="rule"></div>
 
-  <p>one book a month. the shelf is only open over ssh.</p>
+  <p class="lede">
+    a monthly science fiction and fantasy book club.
+    <span>the shelf is only open over ssh.</span>
+  </p>
 
   <div class="cmd">
     <code id="cmd">ssh shop.dungeonbooks.com</code>
@@ -119,7 +139,7 @@
   <dl>
     <dt>host key</dt>
     <dd>SHA256:EXv5X+C23tnnR0ftxRP/Iq+3z3rL1ezcpbAy9S+zXLg</dd>
-    <dt>store</dt>
+    <dt>the store</dt>
     <dd><a href="https://www.dungeonbooks.com/">dungeonbooks.com</a></dd>
   </dl>
 </main>
