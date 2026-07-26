@@ -72,14 +72,20 @@ sudo systemctl stop sshd-revert.timer
 
 Once sshd holds `<tailscale-ip>:22`, binding `0.0.0.0:22` collides with it and
 the shop dies with `address already in use`. Bind the VNIC's private address
-instead — OCI NATs the public IP to it, so visitors still reach the shop on 22
-while admin ssh keeps 22 on the tailnet:
+instead. OCI NATs the public IP to it, so visitors still reach the shop on 22
+while admin ssh keeps 22 on the tailnet.
+
+That address is per-box, so it goes in the environment file with the other
+per-box settings:
 
 ```sh
-# /etc/systemd/system/ssh-bookshop.service.d/bind-vnic.conf
-[Service]
-Environment=HOST=<vnic-private-ip>
+# /etc/ssh-bookshop.env
+HOST=<vnic-private-ip>
 ```
+
+The unit deliberately leaves `HOST` unset. `Environment=` is applied after
+`EnvironmentFile=`, so a value in the unit would silently win over the file and
+put the collision back.
 
 Two firewall layers, and forgetting the second is the classic "port is open but
 it times out": the cloud provider's security list or NSG, and the instance's own
@@ -130,7 +136,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ssh-bookshop
 ```
 
-`/etc/ssh-bookshop.env` holds `SSH_HOST_KEY`, `SQUARE_ACCESS_TOKEN`,
+`/etc/ssh-bookshop.env` holds `SSH_HOST_KEY`, `HOST`, `SQUARE_ACCESS_TOKEN`,
 `SQUARE_LOCATION_ID`, and `SQUARE_ENVIRONMENT=production`.
 
 The binary is static (`CGO_ENABLED=0`), so cross-compiling from anywhere works.

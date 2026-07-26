@@ -14,9 +14,12 @@ WorkingDirectory=/opt/ssh-bookshop
 # everything else it does not need.
 EnvironmentFile=/etc/ssh-bookshop.env
 
-# The shop is the only thing on 22. Admin sshd is bound to the tailnet
-# interface, so this does not collide with it.
-Environment=HOST=0.0.0.0
+# HOST is deliberately not set here. Once admin sshd holds <tailnet-ip>:22,
+# binding 0.0.0.0:22 collides with it and the shop dies with "address already
+# in use", so the right value is the VNIC's private address. That is per-box,
+# so it belongs in the environment file next to the other per-box settings.
+# Setting it here would silently win over the file, since Environment= is
+# applied after EnvironmentFile=.
 Environment=PORT=22
 
 # Storage here is persistent, so ephemeralStorage() is false and a missing

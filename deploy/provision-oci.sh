@@ -114,8 +114,16 @@ Next, in this order, or the box locks you out:
 
   1. ssh ubuntu@<public-ip>            (port 22, admin sshd still owns it)
   2. install tailscale, join the tailnet
-  3. sshd_config: ListenAddress <tailscale-ip>, then restart sshd
+  3. move admin sshd to the tailnet. Ubuntu 24.04 runs ssh.socket, so
+     sshd_config's ListenAddress is ignored; set it on the socket instead:
+       /etc/systemd/system/ssh.socket.d/tailnet-only.conf
+       [Socket]
+       ListenStream=
+       ListenStream=<tailscale-ip>:22
+     then: systemctl daemon-reload && systemctl restart ssh.socket
   4. reconnect over tailscale and CONFIRM before continuing
   5. only now is 22 free for the shop -- see deploy/README.md
+     (the shop binds the VNIC private IP, not 0.0.0.0, or it collides
+     with sshd on the tailnet address)
 
 NEXT

@@ -87,7 +87,7 @@ func newLimiterCache(size int) *lru.Cache[string, *rate.Limiter] {
 		// is a programming error rather than a runtime condition. Failing here
 		// says so; swallowing it returns a nil cache that panics on the first
 		// connection instead, a long way from the cause.
-		panic("connection limiter cache: " + err.Error())
+		panic("rate limiter cache: " + err.Error())
 	}
 	return cache
 }
