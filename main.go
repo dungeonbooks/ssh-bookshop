@@ -82,8 +82,10 @@ func main() {
 	s, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort(host, port)),
 		hostKeyOpt,
-		// Accept any public key. The key is captured per-session and becomes the
-		// account identity at checkout.
+		// Accept any public key. Nothing is checked against it: it gives the
+		// rate limiter a per-visitor bucket and the account page something to
+		// show. Checkout never looks at it, because a Square payment link
+		// collects whatever it needs on Square's side.
 		wish.WithPublicKeyAuth(func(ssh.Context, ssh.PublicKey) bool { return true }),
 		// Let someone in who offers no key at all. Publickey alone turns a
 		// keyless client away at the door with "Permission denied (publickey)",
@@ -94,8 +96,10 @@ func main() {
 		//
 		// The handler prompts for nothing and always succeeds, so a keyless
 		// client falls through to it and browses as anonymous. teaHandler
-		// already treats a nil public key that way. Buying still wants a key,
-		// since a payment link has to belong to someone.
+		// already treats a nil public key that way, and since checkout does not
+		// consult the key either, an anonymous visitor can buy as well as
+		// browse. The rate limiter falls back to keying on the address, which
+		// is the one thing that changes for them.
 		wish.WithKeyboardInteractiveAuth(
 			func(ssh.Context, gossh.KeyboardInteractiveChallenge) bool { return true },
 		),
