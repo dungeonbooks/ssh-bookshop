@@ -82,9 +82,23 @@ func main() {
 	s, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort(host, port)),
 		hostKeyOpt,
-		// Accept any public key: anonymous browse is allowed. The key is still
-		// captured per-session and becomes the account identity at checkout.
+		// Accept any public key. The key is captured per-session and becomes the
+		// account identity at checkout.
 		wish.WithPublicKeyAuth(func(ssh.Context, ssh.PublicKey) bool { return true }),
+		// Let someone in who offers no key at all. Publickey alone turns a
+		// keyless client away at the door with "Permission denied (publickey)",
+		// which is a poor greeting for a shop that does not need to know who
+		// you are to show you a shelf. It also asks visitors to hand over a
+		// public key before they have any reason to trust us, and public keys
+		// are correlatable: GitHub publishes everyone's.
+		//
+		// The handler prompts for nothing and always succeeds, so a keyless
+		// client falls through to it and browses as anonymous. teaHandler
+		// already treats a nil public key that way. Buying still wants a key,
+		// since a payment link has to belong to someone.
+		wish.WithKeyboardInteractiveAuth(
+			func(ssh.Context, gossh.KeyboardInteractiveChallenge) bool { return true },
+		),
 		// The whole chain goes inside recover, not just the shop: a panic in any
 		// of these would otherwise take the server down and every other
 		// shopper's connection with it. Both wish and recover call the last
@@ -138,7 +152,13 @@ func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		fp = gossh.FingerprintSHA256(pk)
 		mode = "ssh key"
 	}
-	log.Info("session", "user", s.User(), "fingerprint", fp)
+	// Deliberately not logging the fingerprint. Nothing here needs it: the rate
+	// limiter keeps its own buckets in memory, there are no orders to trace
+	// back, and no support workflow that identifies a returning visitor. A
+	// public key is correlatable against GitHub, so writing one to the journal
+	// turns a browse into a retained record of who was looking. mode is the
+	// part that is actually useful and identifies nobody.
+	log.Info("session", "user", s.User(), "mode", mode)
 
 	m := newModel(pty.Window.Width, pty.Window.Height, fp)
 	m.sess = sessionInfo{
