@@ -30,7 +30,9 @@ type paymentLink struct {
 
 // sweepLinks deletes unpaid payment links older than sweepAfter. Paid ones are
 // left alone: their order is a real sale, and the link is the buyer's receipt
-// trail. Returns how many were deleted and how many were kept.
+// trail. Returns how many were deleted and how many are still live, so
+// deleted+kept is every link walked: a link that could not be read or could not
+// be deleted is still on the shelf and counts as kept, with the reason in err.
 //
 // A link that will not go is reported but does not stop the run. Returning on
 // the first failure meant one undeletable link wedged the sweep at that point
@@ -68,6 +70,11 @@ func (c *squareClient) sweepLinks(ctx context.Context, now time.Time) (deleted, 
 			if l.OrderID != "" {
 				isPaid, err := c.paid(ctx, l.OrderID)
 				if err != nil {
+					// Counted as kept because it is still live. The pair
+					// describes the shelf after the run rather than the reason
+					// for each outcome, so deleted+kept stays every link
+					// walked; why it survived is in failures.
+					kept++
 					failures = append(failures, fmt.Errorf("check order %s: %w", l.OrderID, err))
 					continue
 				}
@@ -77,6 +84,7 @@ func (c *squareClient) sweepLinks(ctx context.Context, now time.Time) (deleted, 
 				}
 			}
 			if err := c.deleteLink(ctx, l); err != nil {
+				kept++
 				failures = append(failures, err)
 				continue
 			}
@@ -106,7 +114,11 @@ func (c *squareClient) deleteLink(ctx context.Context, l paymentLink) error {
 		return err
 	}
 	if cancelErr := c.cancelOrder(ctx, l.OrderID); cancelErr != nil {
-		return fmt.Errorf("delete link %s: %w (cancelling order %s: %v)", l.ID, err, l.OrderID, cancelErr)
+		// Joined rather than one wrapped and one formatted: either the delete
+		// or the cancel can be the root cause, so both have to stay reachable
+		// through errors.Is and errors.As.
+		return fmt.Errorf("delete link %s (cancelling order %s): %w",
+			l.ID, l.OrderID, errors.Join(err, cancelErr))
 	}
 	if err := c.call(ctx, http.MethodDelete, path, nil, nil); err != nil {
 		return fmt.Errorf("delete link %s after cancelling order %s: %w", l.ID, l.OrderID, err)

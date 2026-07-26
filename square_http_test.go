@@ -607,8 +607,11 @@ func TestSweepLinksOutlivesOneBadLink(t *testing.T) {
 	if err == nil {
 		t.Error("want the stuck link reported")
 	}
-	if deleted != 1 || kept != 0 {
-		t.Errorf("deleted=%d kept=%d, want 1 and 0", deleted, kept)
+	// The stuck link counts as kept: it is still on the shelf, and
+	// deleted+kept has to account for every link walked or the pair stops
+	// describing what is out there. Why it survived is in err.
+	if deleted != 1 || kept != 1 {
+		t.Errorf("deleted=%d kept=%d, want 1 and 1", deleted, kept)
 	}
 	if len(deletedIDs) != 1 || deletedIDs[0] != "FINE" {
 		t.Errorf("deleted %v, want FINE swept despite STUCK failing before it", deletedIDs)
