@@ -72,7 +72,18 @@
     background: radial-gradient(120% 90% at 50% 45%, transparent 55%, hsl(0 0% 0% / .55) 100%);
   }
 
-  main { max-width: 33rem; margin: 0 auto; position: relative; z-index: 3; }
+  /* One column for everything, so the wordmark, the line under it, the command
+     box and the answers all share an edge. 23rem is the measured width of the
+     lede at 21px (358px) plus a little slack, so it holds one line on desktop
+     without the column being set by whatever the text happens to do. Below that
+     the column is simply the screen, and every element narrows with it. */
+  main {
+    width: 100%;
+    max-width: 23rem;
+    margin: 0 auto;
+    position: relative;
+    z-index: 3;
+  }
 
   /* The real wordmark, not the game font standing in for one. Its gradient
      runs #e06a0c to #ffce34, which is already the page's ember-to-gold range,
@@ -81,7 +92,7 @@
 
   h1 img {
     display: block;
-    width: clamp(13rem, 52vw, 17rem);
+    width: 100%;
     height: auto;
     /* Same phosphor bloom the text had, as a filter so it follows the glyph
        edges instead of boxing the image. */
@@ -166,7 +177,6 @@
     margin: 0 0 .9rem;
     font-size: .92rem;
     color: var(--dim);
-    max-width: 30rem;
   }
 
 
