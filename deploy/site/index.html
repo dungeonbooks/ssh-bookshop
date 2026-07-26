@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dungeon Books, over SSH</title>
-<meta name="description" content="The Dungeon Books monthly book club shelf, browsable from a terminal. ssh shop.dungeonbooks.com">
-<meta property="og:title" content="Dungeon Books, over SSH">
+<title>dungeon books</title>
+<meta name="description" content="ssh shop.dungeonbooks.com">
+<meta property="og:title" content="dungeon books">
 <meta property="og:description" content="ssh shop.dungeonbooks.com">
 <meta property="og:type" content="website">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📚</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🕯️</text></svg>">
 <style>
   @font-face {
-    font-family: "RuneScape Bold";
-    src: url("/fonts/RuneScape-Bold-12.ttf") format("truetype");
+    font-family: "RuneScape Quill";
+    src: url("/fonts/RuneScape-Quill.ttf") format("truetype");
     font-display: swap;
   }
   @font-face {
@@ -20,77 +20,52 @@
     src: url("/fonts/RuneScape-Plain-12.ttf") format("truetype");
     font-display: swap;
   }
-  @font-face {
-    font-family: "RuneScape Quill";
-    src: url("/fonts/RuneScape-Quill.ttf") format("truetype");
-    font-display: swap;
-  }
 
   :root {
-    --bg: hsl(0 0% 10%);
-    --panel: hsl(0 0% 12%);
-    --ink: hsl(0 0% 100%);
+    --bg: hsl(0 0% 7%);
+    --ink: hsl(0 0% 78%);
     --gold: hsl(45 65% 58%);
-    --orange: hsl(30 100% 56%);
-    --edge: hsl(0 0% 0%);
-    --dim: hsl(0 0% 62%);
+    --dim: hsl(0 0% 34%);
   }
 
   * { box-sizing: border-box; }
 
+  html { height: 100%; }
+
   body {
     margin: 0;
-    padding: 2rem 1.25rem 4rem;
+    min-height: 100%;
+    padding: 12vh 1.5rem 4rem;
     background: var(--bg);
     color: var(--ink);
-    font-family: "RuneScape Plain", ui-monospace, monospace;
-    font-size: 20px;
-    line-height: 1.6;
-    -webkit-font-smoothing: none;
-    display: flex;
-    justify-content: center;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 15px;
+    line-height: 2;
+    -webkit-font-smoothing: antialiased;
   }
 
-  main { width: 100%; max-width: 46rem; }
+  main {
+    max-width: 34rem;
+    margin: 0 auto;
+  }
 
   h1 {
     font-family: "RuneScape Quill", serif;
+    font-weight: 400;
+    font-size: 2.1rem;
+    letter-spacing: .02em;
     color: var(--gold);
-    font-size: clamp(2.4rem, 8vw, 3.6rem);
-    font-weight: 400;
-    margin: 0 0 .25rem;
-    line-height: 1.1;
+    margin: 0 0 3rem;
+    line-height: 1;
   }
 
-  .tagline { color: var(--dim); margin: 0 0 2rem; }
-
-  /* Chunky bevelled panel, the way the OSRS chrome reads. */
-  .panel {
-    background: var(--panel);
-    border: 3px solid var(--edge);
-    box-shadow: inset 0 0 0 2px hsl(0 0% 22%);
-    padding: 1.25rem;
-    margin: 0 0 1.5rem;
-  }
-
-  h2 {
-    font-family: "RuneScape Bold", ui-monospace, monospace;
-    color: var(--orange);
-    font-size: 1.15rem;
-    margin: 0 0 .6rem;
-    font-weight: 400;
-  }
+  p { margin: 0 0 2rem; }
 
   .cmd {
     display: flex;
-    align-items: center;
-    gap: .75rem;
-    flex-wrap: wrap;
-  }
-
-  code, .fp {
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: .95rem;
+    align-items: baseline;
+    gap: 1rem;
+    margin: 0 0 3rem;
   }
 
   .cmd code {
@@ -100,80 +75,53 @@
   }
 
   button {
-    font-family: "RuneScape Bold", ui-monospace, monospace;
-    font-size: .95rem;
-    color: hsl(0 0% 0%);
-    background: var(--gold);
-    border: 2px solid var(--edge);
-    padding: .3rem .8rem;
+    font: inherit;
+    font-size: .8rem;
+    color: var(--dim);
+    background: none;
+    border: 0;
+    padding: 0;
     cursor: pointer;
+    text-transform: lowercase;
   }
-  button:hover { background: var(--orange); }
-  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  button:hover { color: var(--ink); }
+  button:focus-visible { outline: 1px solid var(--dim); outline-offset: 3px; }
 
-  .fp {
-    color: var(--dim);
-    word-break: break-all;
+  dl {
     margin: 0;
-  }
-
-  p { margin: 0 0 .9rem; }
-  p:last-child { margin-bottom: 0; }
-
-  a { color: var(--gold); }
-  a:hover { color: var(--orange); }
-
-  footer {
+    font-size: .8rem;
     color: var(--dim);
-    font-size: .9rem;
-    margin-top: 2rem;
+    line-height: 1.9;
   }
+  dt { display: none; }
+  dd { margin: 0; word-break: break-all; }
+
+  a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--dim); }
+  a:hover { color: var(--ink); }
 
   @media (max-width: 480px) {
-    body { font-size: 18px; }
+    body { padding-top: 8vh; }
+    .cmd { flex-direction: column; gap: .25rem; }
   }
 </style>
 </head>
 <body>
 <main>
-  <h1>Dungeon Books</h1>
-  <p class="tagline">The monthly book club shelf, in your terminal.</p>
+  <h1>dungeon books</h1>
 
-  <div class="panel">
-    <h2>Open the shop</h2>
-    <div class="cmd">
-      <code id="cmd">ssh shop.dungeonbooks.com</code>
-      <button id="copy" type="button">copy</button>
-    </div>
+  <p>one book a month. the shelf is only open over ssh.</p>
+
+  <div class="cmd">
+    <code id="cmd">ssh shop.dungeonbooks.com</code>
+    <button id="copy" type="button">copy</button>
   </div>
 
-  <div class="panel">
-    <h2>What this is</h2>
-    <p>
-      Every month we pick a science fiction or fantasy book for the shop's book
-      club. This is that shelf, browsable over SSH. Prices come from the same
-      Square catalog as the store, so what you see is what's actually on the
-      shelf in the shop.
-    </p>
-    <p>
-      Any SSH key gets you in. Nothing is installed, and browsing is anonymous.
-      Buying hands you off to <a href="https://www.dungeonbooks.com/">dungeonbooks.com</a>.
-    </p>
-  </div>
-
-  <div class="panel">
-    <h2>Host key</h2>
-    <p>
-      On your first connection SSH asks whether to trust this server. Check it
-      against the fingerprint below before you say yes.
-    </p>
-    <p class="fp">SHA256:EXv5X+C23tnnR0ftxRP/Iq+3z3rL1ezcpbAy9S+zXLg</p>
-  </div>
-
-  <footer>
-    A <a href="https://www.dungeonbooks.com/">Dungeon Books</a> project.
-    Built with <a href="https://charm.sh/">Charm</a>.
-  </footer>
+  <dl>
+    <dt>host key</dt>
+    <dd>SHA256:EXv5X+C23tnnR0ftxRP/Iq+3z3rL1ezcpbAy9S+zXLg</dd>
+    <dt>store</dt>
+    <dd><a href="https://www.dungeonbooks.com/">dungeonbooks.com</a></dd>
+  </dl>
 </main>
 
 <script>
