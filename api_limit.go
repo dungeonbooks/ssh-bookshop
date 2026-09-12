@@ -13,10 +13,9 @@ import (
 // per address for fairness, shop-wide for survival. There is no per-key layer
 // because HTTP callers have no key.
 //
-// Checkout has its own pair of buckets on top, tighter, because each call
-// creates an order and a payment link on Square. The sweeper cleans those up
-// after a day, so the cost of a flood is bounded, but a bounded mess is still
-// a mess.
+// Checkout has its own tighter pair on top, because each call creates an
+// order and a payment link on Square that the sweeper only reaches a day
+// later.
 const (
 	apiAddrRate  = 5
 	apiAddrBurst = 20
@@ -70,8 +69,8 @@ func newAPILimiter() *apiLimiter {
 	}
 }
 
-// allow takes one token from the address bucket and one from the shop bucket,
-// handing the first back if the second refuses, as the SSH limiter does.
+// allowPair takes a token from each bucket, handing the first back if the
+// second refuses, as the SSH limiter does.
 func allowPair(addr, shop *rate.Limiter) bool {
 	now := time.Now()
 	res, ok := reserve(addr, now)

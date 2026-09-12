@@ -133,8 +133,7 @@ func runCommand(ctx context.Context, s *apiShop, key string, args []string, stdo
 		}
 	}
 
-	// JSON like every other error, with the usage inside it, so a caller
-	// that parses stderr never meets a bare block of text.
+	// JSON like every other error, with the usage inside it.
 	emit(stderr, struct {
 		Error string `json:"error"`
 		Usage string `json:"usage"`

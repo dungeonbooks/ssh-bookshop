@@ -27,8 +27,7 @@ const (
 	FulfilShip   = "ship"
 )
 
-// Order states. There are two because the shop only ever asks Square one
-// question about an order: has it been paid.
+// Order states: the shop only ever asks Square whether an order was paid.
 const (
 	StateAwaitingPayment = "awaiting_payment"
 	StatePaid            = "paid"
@@ -61,8 +60,7 @@ type Shelf struct {
 	PricesAsOf time.Time `json:"prices_as_of"`
 }
 
-// Shipping is the one-line rule, for agents that want to warn a buyer before
-// they ask for a checkout.
+// Shipping is the one-line rule, so an agent can warn a buyer up front.
 type Shipping struct {
 	Region string `json:"region"`
 	Note   string `json:"note"`

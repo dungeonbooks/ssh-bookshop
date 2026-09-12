@@ -27,8 +27,8 @@ var version = "dev"
 //go:embed skill.md
 var skill string
 
-// Exit codes are the protocol: 0 done, 1 the shop refused or failed, 2 the
-// command was malformed, 3 the order is still waiting for payment.
+// Exit codes are the protocol: 0 done, 1 something failed, 2 the command was
+// malformed or the shop turned the request down, 3 the order is still waiting.
 const (
 	exitOK      = 0
 	exitError   = 1
@@ -402,11 +402,9 @@ func (c *cli) buy(ctx context.Context, args []string) int {
 			c.note("abandoned; the checkout link no longer works")
 			return exitError
 		case <-time.After(min(pollEvery, max(time.Until(deadline), 0))):
-			// Bounded by the deadline, so a short --wait is honoured rather
-			// than rounded up to the poll interval.
 		}
-		// Each poll is bounded by the deadline too, so a stalled API cannot
-		// stretch a short wait by a whole request timeout.
+		// The sleep and the poll are both bounded by the deadline, so a short
+		// --wait is honoured even against a stalled API.
 		pollCtx, cancelPoll := context.WithDeadline(ctx, deadline.Add(pollEvery))
 		o, err := c.api.Order(pollCtx, out.OrderID)
 		cancelPoll()

@@ -26,12 +26,10 @@ import (
 // shop has no accounts, and the only state an order has lives in Square under
 // an id that reveals nothing but whether it was paid.
 const (
-	// maxQtyPerLine is a shop limit rather than a stock one: checkout already
-	// refuses more copies than are on the shelf, but an untracked book has no
-	// count to refuse against, and nobody buys eleven of anything here.
+	// A shop limit, not a stock one: an untracked book has no count for
+	// checkout to refuse against.
 	maxQtyPerLine = 10
 
-	// maxBody is generous for a request that is a few ISBNs and a word.
 	maxBody = 4 << 10
 
 	// apiTimeout bounds one request end to end. Longer than squareTimeout,
@@ -62,8 +60,7 @@ func newAPIShop(books []Book, sq *squareClient) *apiShop {
 	return &apiShop{books: books, sq: sq, lim: newAPILimiter(), fresh: map[string]freshItem{}, asOf: time.Now().UTC()}
 }
 
-// book returns shelf entry i with anything the API has re-read from Square laid
-// over it, the same way model.book does for a session.
+// book is model.book for the API: shelf entry i under the overlay.
 func (s *apiShop) book(i int) Book {
 	b := s.books[i]
 	s.mu.RLock()
@@ -119,8 +116,7 @@ func (s *apiShop) view(i int) shopapi.Book {
 		stock := b.Stock
 		v.Stock = &stock
 	}
-	// Only one way to buy a book: ours while we have it, Bookshop's once we
-	// do not. A sellable book's buy URL is the checkout endpoint.
+	// One way to buy each book: checkout while we have it, Bookshop once not.
 	if !b.Sellable {
 		v.BuyURL = b.BuyURL()
 	}
@@ -164,8 +160,7 @@ func (s *apiShop) checkout(ctx context.Context, req shopapi.CheckoutRequest) (sh
 	if len(req.Items) == 0 {
 		return shopapi.Checkout{}, apiErr(http.StatusBadRequest, "items is empty")
 	}
-	// Before the shelf is consulted, so an unconfigured Square says so rather
-	// than presenting as every book having sold out.
+	// Before the shelf is read, or an unconfigured Square reads as sold out.
 	if s.sq == nil {
 		return shopapi.Checkout{}, apiErr(http.StatusServiceUnavailable, "square is not configured")
 	}
@@ -205,10 +200,9 @@ func (s *apiShop) checkout(ctx context.Context, req shopapi.CheckoutRequest) (sh
 	var subtotal int64
 	for _, l := range lines {
 		b := s.book(l.idx)
-		// Only a book Square has never priced is refused here. One that has
-		// sold out since goes on to the recheck, which is what notices it
-		// coming back into stock; refusing on the overlay alone would make a
-		// sellout permanent for the life of the process.
+		// Only a book Square never priced is refused here. A sellout goes on
+		// to the recheck, which is what notices stock coming back; refusing
+		// on the overlay would make it permanent.
 		if b.VariationID == "" {
 			e := apiErr(http.StatusConflict, "%s is sold out here", b.BookTitle)
 			e.BuyURL = b.BuyURL()
@@ -235,8 +229,8 @@ func (s *apiShop) checkout(ctx context.Context, req shopapi.CheckoutRequest) (sh
 		if errors.As(err, &ce) {
 			e := apiErr(http.StatusConflict, "%s", ce.msg)
 			e.PriceCents = ce.cents
-			// The overlay was just updated from what Square said, so if the
-			// book is no longer for sale here the refusal says where else.
+			// The overlay is fresh, so a book no longer for sale here can say
+			// where else to buy it.
 			if i, ok := s.find(ce.isbn); ok {
 				if b := s.book(i); !b.Sellable {
 					e.BuyURL = b.BuyURL()
@@ -340,8 +334,7 @@ func (s *apiShop) handler() http.Handler {
 			writeErr(w, apiErr(http.StatusBadRequest, "bad request body: %s", err))
 			return
 		}
-		// One object and nothing after it. A valid request followed by
-		// garbage is a malformed request, not a request.
+		// One object and nothing after it.
 		if dec.Decode(&struct{}{}) != io.EOF {
 			writeErr(w, apiErr(http.StatusBadRequest, "bad request body: trailing data after the request"))
 			return
@@ -423,11 +416,8 @@ func (r *statusRecorder) WriteHeader(code int) {
 }
 
 // clientKey is who is asking, for the rate limiter only; it is never logged.
-//
-// The listener is loopback-only, so the one thing that can set X-Client-IP is
-// Caddy in front of it, which fills it from the real client address after
-// honouring its trusted proxies. Without the header this is a direct
-// connection, and the remote address is the client.
+// X-Client-IP is trusted because the listener is loopback-only, so only Caddy
+// can set it, and Caddy fills it after honouring its trusted proxies.
 func clientKey(r *http.Request) string {
 	if ip := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Client-IP"))); ip != nil {
 		return addrKey(&net.TCPAddr{IP: ip})
