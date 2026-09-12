@@ -12,8 +12,8 @@ set -euo pipefail
 
 export OCI_CLI_AUTH=security_token
 
-COMPARTMENT=${COMPARTMENT:-ocid1.compartment.oc1..aaaaaaaa3z36c7yep7ep2txi2l3po5hzthratg5zpedvivghhzl767erdgcq}
-VCN=${VCN:-ocid1.vcn.oc1.iad.amaaaaaaxirugiqaavwwdmwdaoqtgyvaxpif6yjbvsf4gk4cujw7b6cdz7eq}
+COMPARTMENT=${COMPARTMENT:?set COMPARTMENT to the compartment OCID}
+VCN=${VCN:?set VCN to the VCN OCID}
 
 # Only AD-1 carries an E2.1.Micro allocation; AD-2 and AD-3 are limit 0, so an
 # "out of capacity" here is worth retrying but not worth moving AD for.
