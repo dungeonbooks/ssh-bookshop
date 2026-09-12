@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 type checkout struct {
@@ -20,20 +21,33 @@ func verifyCart(items []cartItem, fresh map[string]freshItem) error {
 	return err
 }
 
+// cartError is a cart Square will not take money for as it stands: sold out,
+// short, or repriced since the shelf was read. Typed so the API can tell a
+// stale cart, which is the buyer's to fix, from Square being unreachable,
+// which is not. isbn names the line that failed and cents is its price now,
+// so a retry can be built without a second round trip.
+type cartError struct {
+	msg   string
+	isbn  string
+	cents int64
+}
+
+func (e *cartError) Error() string { return e.msg }
+
 func verifyCartItems(items []cartItem, fresh map[string]freshItem) ([]map[string]any, error) {
 	out := make([]map[string]any, 0, len(items))
 	for _, it := range items {
 		f, ok := fresh[it.variationID]
 		switch {
 		case !ok || !f.sellable:
-			return nil, fmt.Errorf("%s just sold out", it.title)
+			return nil, &cartError{msg: fmt.Sprintf("%s just sold out", it.title), isbn: it.isbn}
 		case !f.untracked && f.stock < it.qty:
-			return nil, fmt.Errorf("only %d left of %s", f.stock, it.title)
+			return nil, &cartError{msg: fmt.Sprintf("only %d left of %s", f.stock, it.title), isbn: it.isbn, cents: f.cents}
 		case f.cents != it.cents:
 			// Better to send them back to a corrected shelf than to quote one
 			// price and charge another. The fresh figures go back with the
 			// error so the shelf updates and a retry isn't doomed to repeat.
-			return nil, fmt.Errorf("%s is now %s, not %s", it.title, usd(f.cents), usd(it.cents))
+			return nil, &cartError{msg: fmt.Sprintf("%s is now %s, not %s", it.title, usd(f.cents), usd(it.cents)), isbn: it.isbn, cents: f.cents}
 		}
 		out = append(out, map[string]any{
 			"catalog_object_id": it.variationID,
@@ -177,4 +191,14 @@ func (c *squareClient) paid(ctx context.Context, orderID string) (bool, error) {
 		return false, err
 	}
 	return out.Order.State == "COMPLETED" || len(out.Order.Tenders) > 0, nil
+}
+
+// link reads one payment link back, which is how a checkout id becomes the
+// order id needed to check whether it was paid before deleting it.
+func (c *squareClient) link(ctx context.Context, id string) (paymentLink, error) {
+	var out struct {
+		PaymentLink paymentLink `json:"payment_link"`
+	}
+	err := c.call(ctx, http.MethodGet, "/v2/online-checkout/payment-links/"+url.PathEscape(id), nil, &out)
+	return out.PaymentLink, err
 }
