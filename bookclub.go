@@ -7,6 +7,10 @@ package main
 // URL is where a reader should buy it: dungeonbooks.com while we have it, a
 // bookshop.org affiliate link once we sell out.
 var catalog = []Book{
+	{ISBN: "9780316589710", BookTitle: "Harbour of Hungry Ghosts", Author: "Eliza Chan", Collection: collBookClub, Month: "2026-09",
+		Format: "paperback", Pages: 400, WeightGrams: 386,
+		Blurb: "The Au family keeps Hong Kong's shrines blessed and its monsters contained. When the British disrupt the Hungry Ghost festival and a creature nobody recognises carries off her grandmother, eldest daughter Kiamling leads the search with a civil servant, a childhood sweetheart turned pirate, and a sister keeping secrets of her own. First of the Chronicles of the Yiugwai Hunters.",
+		URL:   "https://www.dungeonbooks.com/product/harbour-of-hungry-ghosts-chronicles-of-the-yiugwai-hunters-1-by-eliza-chan-paperback-/76IN4SA2PAKGRNSEQFLMLXOI"},
 	{ISBN: "9780316568654", BookTitle: "The Last Contract of Isako", Author: "Fonda Lee", Collection: collBookClub, Month: "2026-08",
 		Format: "paperback", Pages: 528, WeightGrams: 576,
 		Blurb: "Isako is a legendary swordswoman planning to walk out into the ice and die well. The last contract she takes puts her opposite Martim, the worst apprentice she ever trained, who has climbed to the top of a company that can buy a life or end one.",
