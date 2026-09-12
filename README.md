@@ -36,6 +36,21 @@ A host key is generated at `.ssh/id_ed25519` on first run.
 
 Keys: `↑/↓` move · `enter`/`l` open · `h`/`esc` back · `/` filter · `q` quit.
 
+## For agents
+
+The same shelf and checkout are reachable without a terminal:
+
+- **HTTP API** at `api.dungeonbooks.com`: list books, build a checkout, poll an
+  order. No auth. `api.go`, contract in `deploy/site/openapi.json`.
+- **`dungeon` CLI**, a thin client for it with `--json` everywhere:
+  `go install github.com/dungeonbooks/ssh-bookshop/cmd/dungeon@latest`.
+- **SSH command mode**: `ssh shop.dungeonbooks.com books` answers in JSON and
+  exits. `command.go`.
+- **Discovery**: `shop.dungeonbooks.com/llms.txt` links the docs, the OpenAPI
+  document, and a skill file agents can install.
+
+All of it stops at the hosted Square checkout URL; a human pays there.
+
 ## Deploy
 
 `deploy/` has the systemd unit and the runbook: why this needs a plain VM rather
