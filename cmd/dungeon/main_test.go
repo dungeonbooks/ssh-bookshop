@@ -102,6 +102,12 @@ func TestCommands(t *testing.T) {
 	if code, out, _ := try("cancel", "LINK1"); code != exitOK || !strings.Contains(out, "cancelled") {
 		t.Errorf("cancel: %d %q", code, out)
 	}
+	if code, out, _ := try("books", "--help"); code != exitOK || !strings.Contains(out, "usage: dungeon") {
+		t.Errorf("books --help: %d %q", code, out)
+	}
+	if code, out, _ := try("buy", "--help"); code != exitOK || !strings.Contains(out, "usage: dungeon buy") {
+		t.Errorf("buy --help: %d %q", code, out)
+	}
 	if code, out, _ := try("skill"); code != exitOK || !strings.Contains(out, "name: dungeon-books") {
 		t.Errorf("skill: %d %q", code, out)
 	}

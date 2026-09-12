@@ -31,9 +31,11 @@ ssh shop.dungeonbooks.com order <order_id>
 ssh shop.dungeonbooks.com cancel <checkout_id>
 ```
 
-Same shapes and same exit codes as the HTTP API and the dungeon CLI: 0 done,
-1 refused or failed, 2 malformed, 3 the order is still waiting. `buy` returns
-the checkout at once; poll with `order`.
+Same shapes and same exit codes as the dungeon CLI: 0 done, 1 something
+failed, 2 malformed or a request the shop turned down, 3 the order is still
+waiting. Errors are JSON on stderr. `buy` returns the checkout at once; poll
+with `order`. Checkouts share the API's rate limit: a burst of three, then one
+every five seconds.
 
 Automation should prefer the HTTP API. Sandboxes often have no SSH client, no
 key, and a host-key prompt that blocks a script; pass

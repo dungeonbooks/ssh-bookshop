@@ -52,12 +52,18 @@ func main() {
 	}
 
 	// The same shelf and the same Square client, for agents: an HTTP API on a
-	// loopback port that Caddy fronts, and the SSH command mode below. Empty
-	// API_ADDR turns the HTTP side off.
+	// loopback port that Caddy fronts, and the SSH command mode below. Setting
+	// API_ADDR to the empty string turns the HTTP side off, which env() cannot
+	// express because it treats empty as unset.
 	shop := newAPIShop(catalog, sq)
+	done := make(chan os.Signal, 1)
 	var api *http.Server
-	if addr := env("API_ADDR", "127.0.0.1:8080"); addr != "" {
-		api = startAPI(addr, shop)
+	apiAddr, apiSet := os.LookupEnv("API_ADDR")
+	if !apiSet {
+		apiAddr = "127.0.0.1:8080"
+	}
+	if apiAddr != "" {
+		api = startAPI(apiAddr, shop, done)
 	}
 
 	// A fixed host key from the environment where storage is ephemeral; a
@@ -132,7 +138,6 @@ func main() {
 		log.Fatal("could not create server", "err", err)
 	}
 
-	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	log.Info("starting ssh bookshop", "addr", net.JoinHostPort(host, port))
 	go func() {

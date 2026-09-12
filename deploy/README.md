@@ -93,8 +93,12 @@ iptables, which most images ship locked down.
 
 ```sh
 sudo iptables -I INPUT 1 -p tcp --dport 22 -j ACCEPT
+sudo iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT    # ACME HTTP-01 and the redirect
+sudo iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT   # the landing page and the API
 sudo netfilter-persistent save
 ```
+
+`provision-oci.sh` opens the same three in the network security group.
 
 ## The host key is permanent
 

@@ -126,6 +126,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(rest) == 0 {
 		return c.pick(ctx)
 	}
+	// --help after a subcommand, for the ones without flags of their own;
+	// buy parses its own and answers with its own usage.
+	if rest[0] != "buy" && wantsHelp(rest[1:]) {
+		fmt.Fprintf(stdout, rootUsage, shopapi.DefaultBaseURL)
+		return exitOK
+	}
 	switch rest[0] {
 	case "books":
 		switch len(rest) {
@@ -156,6 +162,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stderr, rootUsage, shopapi.DefaultBaseURL)
 	return exitUsage
+}
+
+func wantsHelp(args []string) bool {
+	for _, a := range args {
+		if a == "--help" || a == "-h" || a == "help" {
+			return true
+		}
+	}
+	return false
 }
 
 // fail reports an error the way the caller asked for output: JSON stays JSON.
@@ -380,7 +395,12 @@ func (c *cli) buy(ctx context.Context, args []string) int {
 			if ctx.Err() != nil {
 				continue // the select above will handle the interrupt
 			}
-			// A failed poll is not a failed order. Keep waiting.
+			// A failed poll is not a failed order. Keep waiting, but not
+			// past the deadline: an API that is down for an hour must still
+			// hand control back.
+			if time.Now().After(deadline) {
+				return c.stillWaiting(out.OrderID, *wait, shopapi.Order{OrderID: out.OrderID, State: shopapi.StateAwaitingPayment})
+			}
 			continue
 		}
 		if o.State == shopapi.StatePaid {
@@ -392,14 +412,18 @@ func (c *cli) buy(ctx context.Context, args []string) int {
 			return exitOK
 		}
 		if time.Now().After(deadline) {
-			if c.json {
-				emit(c.stdout, o)
-			} else {
-				fmt.Fprintf(c.stdout, "still waiting after %s; check later with: dungeon order %s\n", *wait, out.OrderID)
-			}
-			return exitWaiting
+			return c.stillWaiting(out.OrderID, *wait, o)
 		}
 	}
+}
+
+func (c *cli) stillWaiting(orderID string, waited time.Duration, o shopapi.Order) int {
+	if c.json {
+		emit(c.stdout, o)
+	} else {
+		fmt.Fprintf(c.stdout, "still waiting after %s; check later with: dungeon order %s\n", waited, orderID)
+	}
+	return exitWaiting
 }
 
 func (c *cli) order(ctx context.Context, id string) int {

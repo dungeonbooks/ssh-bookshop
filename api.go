@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +48,9 @@ const (
 type apiShop struct {
 	books []Book
 	sq    *squareClient
+	// lim is shared by the HTTP and SSH transports, so a checkout is a
+	// checkout whichever way it arrives.
+	lim *apiLimiter
 
 	mu    sync.RWMutex
 	fresh map[string]freshItem
@@ -54,7 +58,7 @@ type apiShop struct {
 }
 
 func newAPIShop(books []Book, sq *squareClient) *apiShop {
-	return &apiShop{books: books, sq: sq, fresh: map[string]freshItem{}, asOf: time.Now().UTC()}
+	return &apiShop{books: books, sq: sq, lim: newAPILimiter(), fresh: map[string]freshItem{}, asOf: time.Now().UTC()}
 }
 
 // book returns shelf entry i with anything the API has re-read from Square laid
@@ -159,6 +163,11 @@ func (s *apiShop) checkout(ctx context.Context, req shopapi.CheckoutRequest) (sh
 	if len(req.Items) == 0 {
 		return shopapi.Checkout{}, apiErr(http.StatusBadRequest, "items is empty")
 	}
+	// Before the shelf is consulted, so an unconfigured Square says so rather
+	// than presenting as every book having sold out.
+	if s.sq == nil {
+		return shopapi.Checkout{}, apiErr(http.StatusServiceUnavailable, "square is not configured")
+	}
 
 	// Merge duplicate lines so two entries for one ISBN do not become two
 	// Square line items that each pass the stock check on their own.
@@ -171,9 +180,18 @@ func (s *apiShop) checkout(ctx context.Context, req shopapi.CheckoutRequest) (sh
 		if !ok {
 			return shopapi.Checkout{}, apiErr(http.StatusNotFound, "%s is not on the shelf", it.ISBN)
 		}
+		tooMany := apiErr(http.StatusBadRequest, "at most %d copies of %s per order", maxQtyPerLine, s.books[idx].BookTitle)
+		// Checked as headroom rather than after adding, so two quantities
+		// that are each in range cannot overflow the sum past the cap.
+		if it.Qty > maxQtyPerLine {
+			return shopapi.Checkout{}, tooMany
+		}
 		merged := false
 		for i := range lines {
 			if lines[i].idx == idx {
+				if it.Qty > maxQtyPerLine-lines[i].qty {
+					return shopapi.Checkout{}, tooMany
+				}
 				lines[i].qty += it.Qty
 				merged = true
 			}
@@ -191,14 +209,8 @@ func (s *apiShop) checkout(ctx context.Context, req shopapi.CheckoutRequest) (sh
 			e.BuyURL = b.BuyURL()
 			return shopapi.Checkout{}, e
 		}
-		if l.qty > maxQtyPerLine {
-			return shopapi.Checkout{}, apiErr(http.StatusBadRequest, "at most %d copies of %s per order", maxQtyPerLine, b.BookTitle)
-		}
 		items = append(items, cartItem{isbn: b.ISBN, variationID: b.VariationID, title: b.BookTitle, cents: b.Cents, qty: l.qty})
 		subtotal += b.Cents * int64(l.qty)
-	}
-	if s.sq == nil {
-		return shopapi.Checkout{}, apiErr(http.StatusServiceUnavailable, "square is not configured")
 	}
 
 	var ship int64
@@ -291,7 +303,7 @@ func squareErr(err error, format string, args ...any) *shopapi.Error {
 // handler is the whole API. Rate limiting wraps everything; the checkout
 // route gets a second, tighter limit because it creates orders on Square.
 func (s *apiShop) handler() http.Handler {
-	lim := newAPILimiter()
+	lim := s.lim
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/books", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.shelf())
@@ -306,6 +318,7 @@ func (s *apiShop) handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/checkout", func(w http.ResponseWriter, r *http.Request) {
 		if !lim.allowCheckout(clientKey(r)) {
+			w.Header().Set("Retry-After", "5")
 			writeErr(w, apiErr(http.StatusTooManyRequests, "too many checkouts, slow down"))
 			return
 		}
@@ -409,9 +422,11 @@ func clientKey(r *http.Request) string {
 	return host
 }
 
-// startAPI serves the API on addr in the background. An empty addr means no
-// API, which is what a test that only wants the SSH shop asks for.
-func startAPI(addr string, s *apiShop) *http.Server {
+// startAPI serves the API on addr in the background. A listener that fails
+// reports on failed, the same channel the SSH server uses, so the process
+// stops and systemd restarts it rather than running on with the agent side
+// silently missing.
+func startAPI(addr string, s *apiShop, failed chan<- os.Signal) *http.Server {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           s.handler(),
@@ -424,6 +439,7 @@ func startAPI(addr string, s *apiShop) *http.Server {
 		log.Info("starting api", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("api error", "err", err)
+			failed <- nil
 		}
 	}()
 	return srv

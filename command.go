@@ -22,8 +22,9 @@ import (
 // product, not because agents should prefer it: most sandboxes have no SSH
 // client, so the HTTP API is the path that has to work.
 //
-// Exit codes are the protocol: 0 done, 1 the shop refused or failed, 2 the
-// command was malformed, 3 the order is still waiting for payment.
+// Exit codes are the protocol, the same as the CLI's: 0 done, 1 something
+// failed, 2 the command was malformed or the shop turned the request down, 3
+// the order is still waiting for payment.
 const (
 	exitOK      = 0
 	exitError   = 1
@@ -53,18 +54,25 @@ func commandMode(s *apiShop) wish.Middleware {
 				next(sess)
 				return
 			}
-			code := runCommand(sess.Context(), s, args, sess, sess.Stderr())
+			// A deadline, as the HTTP side has, so a stalled Square call cannot
+			// hold a session open for good.
+			ctx, cancel := context.WithTimeout(sess.Context(), apiTimeout)
+			defer cancel()
+			code := runCommand(ctx, s, sessionKey(sess), args, sess, sess.Stderr())
 			_ = sess.Exit(code)
 		}
 	}
 }
 
 // runCommand is the whole of command mode without the session around it, so
-// it can be tested with a writer.
-func runCommand(ctx context.Context, s *apiShop, args []string, stdout, stderr io.Writer) int {
+// it can be tested with a writer. key identifies the caller to the checkout
+// limiter: the SSH fingerprint, or the address for a keyless session.
+func runCommand(ctx context.Context, s *apiShop, key string, args []string, stdout, stderr io.Writer) int {
+	// Same mapping as the CLI: a request the shop turned down is the
+	// caller's to fix, rate limiting and outages are not.
 	fail := func(e *shopapi.Error) int {
 		emit(stderr, e)
-		if e.Status == http.StatusBadRequest || e.Status == http.StatusNotFound {
+		if e.Status >= 400 && e.Status < 500 && e.Status != http.StatusTooManyRequests {
 			return exitUsage
 		}
 		return exitError
@@ -89,6 +97,11 @@ func runCommand(ctx context.Context, s *apiShop, args []string, stdout, stderr i
 		req, err := parseBuy(args[1:])
 		if err != nil {
 			return fail(apiErr(http.StatusBadRequest, "%s", err))
+		}
+		// The connection limiter admits sessions; this is the checkout
+		// budget, shared with HTTP, because each call creates an order.
+		if !s.lim.allowCheckout(key) {
+			return fail(apiErr(http.StatusTooManyRequests, "too many checkouts, slow down"))
 		}
 		out, e := s.checkout(ctx, req)
 		if e != nil {
@@ -120,7 +133,12 @@ func runCommand(ctx context.Context, s *apiShop, args []string, stdout, stderr i
 		}
 	}
 
-	io.WriteString(stderr, commandUsage)
+	// JSON like every other error, with the usage inside it, so a caller
+	// that parses stderr never meets a bare block of text.
+	emit(stderr, struct {
+		Error string `json:"error"`
+		Usage string `json:"usage"`
+	}{"unknown command or wrong arguments", commandUsage})
 	return exitUsage
 }
 
@@ -130,10 +148,15 @@ func parseBuy(args []string) (shopapi.CheckoutRequest, error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
-		case a == "--pickup":
+		case a == "--pickup" || a == "--ship":
+			// Two flags is an ambiguity, not a preference for the last one.
+			if req.Fulfilment != "" {
+				return req, fmt.Errorf("choose one of --pickup or --ship")
+			}
 			req.Fulfilment = shopapi.FulfilPickup
-		case a == "--ship":
-			req.Fulfilment = shopapi.FulfilShip
+			if a == "--ship" {
+				req.Fulfilment = shopapi.FulfilShip
+			}
 		case a == "--key":
 			if i+1 >= len(args) {
 				return req, fmt.Errorf("--key needs a value")

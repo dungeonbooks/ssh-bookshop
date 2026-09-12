@@ -84,7 +84,11 @@ func (c *squareClient) recheck(ctx context.Context, items []cartItem) (map[strin
 			return nil, err
 		}
 		if id == "" {
-			continue // gone from the catalog entirely; caller reports sold out
+			// Gone from the catalog entirely. Recorded as unsellable rather
+			// than skipped, so the shelf that reads this back stops offering
+			// the book instead of sending every retry into the same refusal.
+			out[it.variationID] = freshItem{}
+			continue
 		}
 		ids = append(ids, id)
 		prices[id] = cents
@@ -187,7 +191,10 @@ func (c *squareClient) paid(ctx context.Context, orderID string) (bool, error) {
 			} `json:"tenders"`
 		} `json:"order"`
 	}
-	if err := c.call(ctx, http.MethodGet, "/v2/orders/"+orderID, nil, &out); err != nil {
+	// Escaped because the API hands this straight from a URL: an id with a
+	// slash or a question mark in it must not be able to reach some other
+	// Square endpoint with the shop's token.
+	if err := c.call(ctx, http.MethodGet, "/v2/orders/"+url.PathEscape(orderID), nil, &out); err != nil {
 		return false, err
 	}
 	return out.Order.State == "COMPLETED" || len(out.Order.Tenders) > 0, nil

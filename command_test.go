@@ -13,7 +13,7 @@ import (
 func run(t *testing.T, s *apiShop, args ...string) (code int, out map[string]any, stderr string) {
 	t.Helper()
 	var so, se bytes.Buffer
-	code = runCommand(context.Background(), s, args, &so, &se)
+	code = runCommand(context.Background(), s, "test-key", args, &so, &se)
 	if so.Len() > 0 {
 		if err := json.Unmarshal(so.Bytes(), &out); err != nil {
 			t.Fatalf("%v: stdout is not JSON: %v\n%s", args, err, so.String())
@@ -61,8 +61,28 @@ func TestCommandMode(t *testing.T) {
 		t.Errorf("cancel: code %d, %v", code, out)
 	}
 
-	if code, _, se := run(t, s, "dance"); code != exitUsage || !strings.Contains(se, "usage:") {
-		t.Errorf("unknown command: code %d, stderr %q", code, se)
+	if code, _, se := run(t, s, "dance"); code != exitUsage || !strings.Contains(se, "usage:") || !strings.HasPrefix(se, "{") {
+		t.Errorf("unknown command: code %d, stderr %q (want JSON carrying the usage)", code, se)
+	}
+	// A refusal from the shelf is the caller's to fix, so it exits 2 as in the
+	// CLI, not 1.
+	if code, _, se := run(t, s, "buy", isbnGone, "--pickup"); code != exitUsage || !strings.Contains(se, "bookshop.org") {
+		t.Errorf("buy a book we do not carry: code %d, stderr %q", code, se)
+	}
+}
+
+// TestCommandBuyIsThrottled: the SSH path spends the same checkout budget as
+// HTTP, otherwise it would be the way around the limit.
+func TestCommandBuyIsThrottled(t *testing.T) {
+	s, st := testShop(t)
+	var limited int
+	for i := 0; i < checkoutAddrBurst+2; i++ {
+		if code, _, se := run(t, s, "buy", isbnStocked, "--pickup"); code == exitError && strings.Contains(se, "too many") {
+			limited++
+		}
+	}
+	if limited != 2 || st.links != checkoutAddrBurst {
+		t.Errorf("limited %d, links %d; want 2 and %d", limited, st.links, checkoutAddrBurst)
 	}
 }
 
@@ -77,5 +97,8 @@ func TestParseBuy(t *testing.T) {
 	}
 	if _, err := parseBuy([]string{"111", "--drone"}); err == nil {
 		t.Error("accepted an unknown flag")
+	}
+	if _, err := parseBuy([]string{"111", "--pickup", "--ship"}); err == nil {
+		t.Error("accepted both fulfilments; the last one would silently win")
 	}
 }

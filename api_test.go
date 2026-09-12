@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -224,6 +226,7 @@ func TestCheckoutRefusals(t *testing.T) {
 		{"unknown isbn", shopapi.CheckoutRequest{Items: []shopapi.Item{{ISBN: "1", Qty: 1}}, Fulfilment: "pickup"}, 404, "not on the shelf"},
 		{"too many", shopapi.CheckoutRequest{Items: []shopapi.Item{{ISBN: isbnStocked, Qty: 11}}, Fulfilment: "pickup"}, 400, "at most 10"},
 		{"duplicates merge before the cap", shopapi.CheckoutRequest{Items: []shopapi.Item{{ISBN: isbnStocked, Qty: 6}, {ISBN: isbnStocked, Qty: 6}}, Fulfilment: "pickup"}, 400, "at most 10"},
+		{"a sum that would overflow", shopapi.CheckoutRequest{Items: []shopapi.Item{{ISBN: isbnStocked, Qty: 6}, {ISBN: isbnStocked, Qty: math.MaxInt}}, Fulfilment: "pickup"}, 400, "at most 10"},
 		{"not carried", shopapi.CheckoutRequest{Items: []shopapi.Item{{ISBN: isbnGone, Qty: 1}}, Fulfilment: "pickup"}, 409, "sold out here"},
 		{"not json", "nonsense", 400, "bad request body"},
 	} {
@@ -273,6 +276,21 @@ func TestCheckoutStaleShelf(t *testing.T) {
 		})
 		if rec.Code != http.StatusConflict || !strings.Contains(out["error"].(string), "only 1 left") {
 			t.Fatalf("status = %d, body = %v", rec.Code, out)
+		}
+	})
+	t.Run("removed from the catalog", func(t *testing.T) {
+		s, st := testShop(t)
+		delete(st.upc, isbnStocked)
+		h := s.handler()
+		rec, out := do(t, h, http.MethodPost, "/v1/checkout", shopapi.CheckoutRequest{
+			Items: []shopapi.Item{{ISBN: isbnStocked, Qty: 1}}, Fulfilment: "pickup",
+		})
+		if rec.Code != http.StatusConflict || !strings.Contains(out["error"].(string), "sold out") {
+			t.Fatalf("status = %d, body = %v", rec.Code, out)
+		}
+		_, shelf := do(t, h, http.MethodGet, "/v1/books/"+isbnStocked, nil)
+		if shelf["sellable"] != false {
+			t.Error("shelf still offers a book Square no longer lists, so every retry would hit the same 409")
 		}
 	})
 	t.Run("sold out", func(t *testing.T) {
@@ -358,6 +376,24 @@ func TestCheckoutRateLimit(t *testing.T) {
 	}
 	if st.links != checkoutAddrBurst {
 		t.Errorf("links created = %d, want %d", st.links, checkoutAddrBurst)
+	}
+}
+
+// TestOrderIDIsEscaped: the id comes straight off a public URL, and it must
+// not be able to steer the request at some other Square endpoint.
+func TestOrderIDIsEscaped(t *testing.T) {
+	var got string
+	c := fakeSquare(t, map[string]func(http.ResponseWriter, *http.Request){
+		"/v2/orders/": func(w http.ResponseWriter, r *http.Request) {
+			got = r.RequestURI
+			io.WriteString(w, `{"order":{"state":"OPEN"}}`)
+		},
+	})
+	if _, err := c.paid(context.Background(), "a/b?x=1"); err != nil {
+		t.Fatal(err)
+	}
+	if got != "/v2/orders/a%2Fb%3Fx=1" {
+		t.Errorf("Square saw %q", got)
 	}
 }
 
