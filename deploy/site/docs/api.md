@@ -18,14 +18,14 @@ The shelf.
 {
   "books": [
     {
-      "isbn": "9780316568654",
-      "title": "The Last Contract of Isako",
-      "author": "Fonda Lee",
+      "isbn": "9780316589710",
+      "title": "Harbour of Hungry Ghosts",
+      "author": "Eliza Chan",
       "collection": "book club",
-      "month": "2026-08",
+      "month": "2026-09",
       "featured": true,
       "format": "paperback",
-      "pages": 528,
+      "pages": 400,
       "blurb": "...",
       "price_cents": 1999,
       "sellable": true,
