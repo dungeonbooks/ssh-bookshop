@@ -6,10 +6,57 @@
 # it needs a Cloudflare API token sitting on a public-facing box, and a token
 # that can edit our DNS is a worse thing to leak than an open port serving a
 # redirect.
+# api.dungeonbooks.com is orange-clouded, unlike shop., because HTTP proxies
+# fine and the API is the one thing on this box worth Cloudflare's WAF and
+# rate limits in front of it: an unauthenticated endpoint that creates orders
+# on Square. The Go process listens on loopback only, so nothing reaches it
+# except through here.
+{
+	servers {
+		# Cloudflare's published ranges (https://www.cloudflare.com/ips/), so
+		# {client_ip} is the visitor rather than the edge. Refresh when they
+		# change; a stale list only makes rate limiting coarser, never open.
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+	}
+}
+
+api.dungeonbooks.com {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Link "<https://shop.dungeonbooks.com/llms.txt>; rel=\"llms-txt\", <https://shop.dungeonbooks.com/openapi.json>; rel=\"service-desc\""
+	}
+	reverse_proxy 127.0.0.1:8080 {
+		# The API keys its rate limiter on this. Only Caddy can set it, because
+		# the listener is loopback-only, and Caddy fills it after honouring
+		# trusted_proxies above.
+		header_up X-Client-IP {client_ip}
+	}
+}
+
 shop.dungeonbooks.com {
 	root * /var/www/shop
 	file_server
 	encode gzip
+
+	# Agents find the docs through these, the way Mintlify-hosted docs
+	# advertise theirs. An Accept: text/markdown request for a docs page gets
+	# the markdown itself; the pages are only ever markdown, so this is a
+	# convention rather than a conversion.
+	header Link "</llms.txt>; rel=\"llms-txt\", </llms-full.txt>; rel=\"llms-full-txt\""
+	header X-Llms-Txt "/llms.txt"
+	@md {
+		path /docs/*
+		not path *.md
+		header Accept *text/markdown*
+	}
+	rewrite @md {path}.md
+	header /docs/* Content-Type "text/markdown; charset=utf-8"
+	header /llms.txt Content-Type "text/markdown; charset=utf-8"
+	header /llms-full.txt Content-Type "text/markdown; charset=utf-8"
+	header /skill.md Content-Type "text/markdown; charset=utf-8"
+	header /openapi.json Content-Type "application/json"
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -24,4 +71,7 @@ shop.dungeonbooks.com {
 	@fonts path /fonts/*
 	header @fonts Cache-Control "public, max-age=604800"
 	header /index.html Cache-Control "public, max-age=300"
+	# Agent-facing files change with the code, so keep them short too.
+	@agentfiles path /llms.txt /llms-full.txt /skill.md /openapi.json /docs/*
+	header @agentfiles Cache-Control "public, max-age=300"
 }

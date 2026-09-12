@@ -63,12 +63,19 @@ if [ -z "$NSG" ] || [ "$NSG" = "null" ]; then
 fi
 echo "$NSG"
 
-say "ingress on 22 only"
-# Port 22 is the whole product: visitors type no -p. Everything else stays shut.
+say "ingress on 22, 80 and 443"
+# Port 22 is the whole product: visitors type no -p. 80 and 443 are Caddy: the
+# landing page, the agent docs, and the API. Everything else stays shut.
 oci network nsg rules add --nsg-id "$NSG" --security-rules '[
   {"direction":"INGRESS","protocol":"6","source":"0.0.0.0/0","sourceType":"CIDR_BLOCK",
    "description":"the shop",
    "tcpOptions":{"destinationPortRange":{"min":22,"max":22}}},
+  {"direction":"INGRESS","protocol":"6","source":"0.0.0.0/0","sourceType":"CIDR_BLOCK",
+   "description":"caddy: ACME HTTP-01 and the redirect to https",
+   "tcpOptions":{"destinationPortRange":{"min":80,"max":80}}},
+  {"direction":"INGRESS","protocol":"6","source":"0.0.0.0/0","sourceType":"CIDR_BLOCK",
+   "description":"caddy: landing page, agent docs, api",
+   "tcpOptions":{"destinationPortRange":{"min":443,"max":443}}},
   {"direction":"INGRESS","protocol":"1","source":"0.0.0.0/0","sourceType":"CIDR_BLOCK",
    "description":"path MTU discovery, without which large writes hang",
    "icmpOptions":{"type":3,"code":4}}

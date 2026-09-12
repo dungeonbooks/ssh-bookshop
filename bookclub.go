@@ -59,7 +59,13 @@ var catalog = []Book{
 //
 // -1 only when there is no shelf.
 func featured() int {
-	if len(catalog) == 0 {
+	return featuredIn(catalog)
+}
+
+// featuredIn is featured() over any shelf, so the API can answer it for the
+// shelf it was given rather than the package one.
+func featuredIn(books []Book) int {
+	if len(books) == 0 {
 		return -1
 	}
 	return 0

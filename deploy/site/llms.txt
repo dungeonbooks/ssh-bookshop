@@ -1,0 +1,20 @@
+# Dungeon Books
+
+> An independent science fiction, fantasy, and RPG bookstore in Jersey City. One shelf: the monthly book club picks. Browse over SSH, buy through a hosted Square checkout that a human pays on. Agents: use the HTTP API or the dungeon CLI below. No account, no auth, no card handling on our side.
+
+## Buying
+
+- [How buying works](https://shop.dungeonbooks.com/docs/buying.md): pickup or Media Mail shipping, US only, payment on a Square page the human opens.
+- [API reference](https://shop.dungeonbooks.com/docs/api.md): five endpoints, no auth, JSON.
+- [OpenAPI](https://shop.dungeonbooks.com/openapi.json): the same contract, machine-readable.
+
+## Tools
+
+- [dungeon CLI](https://shop.dungeonbooks.com/docs/cli.md): install and usage; every command has --json.
+- [Agent skill](https://shop.dungeonbooks.com/skill.md): drop into .claude/skills/ or equivalent.
+
+## Optional
+
+- [The SSH shop](https://shop.dungeonbooks.com/docs/ssh.md): the interactive shelf, command mode, host key fingerprint.
+- [Book club](https://dungeonbooks.com): meetings and this month's pick.
+- [Everything in one file](https://shop.dungeonbooks.com/llms-full.txt)

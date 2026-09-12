@@ -13,11 +13,13 @@ Fantasy picks, newest first, with the current month starred. Inspired by
 - **Identity = SSH public key.** Any key connects (anonymous browse). The key's
   SHA256 fingerprint is captured per session (`main.go:teaHandler`) and is what
   you'd associate with an account at first purchase — same model as terminal.shop.
-- **No inventory, no payment.** "Buy" hands off to a URL. Books we stock link to
-  dungeonbooks.com (a sale beats a commission); once a pick sells out it falls
-  back to `https://bookshop.org/a/{AffiliateID}/{isbn}`. The affiliate ID
-  (`108216`) and URL shape match marty's `BookshopClient.get_buy_url`
-  (`marty/src/tools/external/bookshop.py`).
+- **Square is the till.** Prices and stock come from the shop's Square catalog
+  at boot, keyed by ISBN as the variation's UPC, and are re-read at checkout.
+  Checkout builds the order on Square and hands the buyer a hosted payment
+  link as a QR and a URL; the shop polls until it is paid. No card ever passes
+  through this process. A pick we no longer carry links out to
+  `https://bookshop.org/a/{AffiliateID}/{isbn}` instead; the affiliate ID
+  (`108216`) and URL shape match marty's `BookshopClient.get_buy_url`.
 - **The newest pick is featured.** `featured()` returns the top of the shelf, so
   the shop opens on it and marks it with a star. Announcing a pick is what makes
   it current, and that happens a little before its month starts, so adding it to
@@ -35,6 +37,21 @@ ssh -p 23234 localhost
 A host key is generated at `.ssh/id_ed25519` on first run.
 
 Keys: `↑/↓` move · `enter`/`l` open · `h`/`esc` back · `/` filter · `q` quit.
+
+## For agents
+
+The same shelf and checkout are reachable without a terminal:
+
+- **HTTP API** at `api.dungeonbooks.com`: list books, build a checkout, poll an
+  order. No auth. `api.go`, contract in `deploy/site/openapi.json`.
+- **`dungeon` CLI**, a thin client for it with `--json` everywhere:
+  `go install github.com/dungeonbooks/ssh-bookshop/cmd/dungeon@latest`.
+- **SSH command mode**: `ssh shop.dungeonbooks.com books` answers in JSON and
+  exits. `command.go`.
+- **Discovery**: `shop.dungeonbooks.com/llms.txt` links the docs, the OpenAPI
+  document, and a skill file agents can install.
+
+All of it stops at the hosted Square checkout URL; a human pays there.
 
 ## Deploy
 
@@ -58,5 +75,6 @@ and why the host key is permanent once anyone has connected.
   carts and order history across sessions.
 - **DRM-free delivery.** Wish ships an `scp` middleware — free/owned titles could
   be pulled with `scp ssh://books/<isbn>.pdf .` over the same connection.
-- **Paid checkout.** For non-affiliate sales, render a Stripe payment link the
-  user opens in a browser to stay out of PCI scope.
+- **Card on file.** A first purchase through the hosted link can seed a stored
+  card on Square, after which repeat purchases need no link and no QR. Spiked
+  and proven in sandbox; needs an identity for the HTTP and CLI paths.

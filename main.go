@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -48,6 +49,27 @@ func main() {
 	} else {
 		log.Info("square ready", "env", env("SQUARE_ENVIRONMENT", "production"),
 			"priced", found, "of", len(catalog), "location", sq.locationID)
+	}
+
+	// The same shelf and the same Square client, for agents: an HTTP API on a
+	// loopback port that Caddy fronts, and the SSH command mode below. Setting
+	// API_ADDR to the empty string turns the HTTP side off, which env() cannot
+	// express because it treats empty as unset.
+	shop := newAPIShop(catalog, sq)
+	done := make(chan os.Signal, 1)
+	var api *http.Server
+	apiAddr, apiSet := os.LookupEnv("API_ADDR")
+	if !apiSet {
+		apiAddr = "127.0.0.1:8080"
+	}
+	if apiAddr != "" {
+		// Loopback only. The API trusts X-Client-IP because nothing but Caddy
+		// can reach it; a public bind would make that header spoofable and
+		// expose an order-creating endpoint with no WAF in front of it.
+		if !loopbackAddr(apiAddr) {
+			log.Fatal("API_ADDR must be a loopback address; Caddy fronts the API", "addr", apiAddr)
+		}
+		api = startAPI(apiAddr, shop, done)
 	}
 
 	// A fixed host key from the environment where storage is ephemeral; a
@@ -105,12 +127,14 @@ func main() {
 		// The whole chain goes inside recover, not just the shop: a panic in any
 		// of these would otherwise take the server down and every other
 		// shopper's connection with it. Both wish and recover call the last
-		// entry first, so this reads bottom-up: rate limit, log, require a
-		// terminal, then run the shop.
+		// entry first, so this reads bottom-up: rate limit, log, answer a
+		// command if one was sent, otherwise require a terminal and run the
+		// shop.
 		wish.WithMiddleware(
 			wrecover.Middleware(
 				bubbletea.Middleware(teaHandler),
 				activeterm.Middleware(), // require a real interactive terminal
+				commandMode(shop),       // `ssh shop books` and friends, no terminal needed
 				sessionLog(),
 				ratelimiter.Middleware(connectionLimiter()),
 			),
@@ -120,7 +144,6 @@ func main() {
 		log.Fatal("could not create server", "err", err)
 	}
 
-	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	log.Info("starting ssh bookshop", "addr", net.JoinHostPort(host, port))
 	go func() {
@@ -141,6 +164,11 @@ func main() {
 	log.Info("stopping")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	if api != nil {
+		if err := api.Shutdown(ctx); err != nil {
+			log.Error("api shutdown error", "err", err)
+		}
+	}
 	if err := s.Shutdown(ctx); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
 		log.Error("shutdown error", "err", err)
 	}

@@ -93,8 +93,12 @@ iptables, which most images ship locked down.
 
 ```sh
 sudo iptables -I INPUT 1 -p tcp --dport 22 -j ACCEPT
+sudo iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT    # ACME HTTP-01 and the redirect
+sudo iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT   # the landing page and the API
 sudo netfilter-persistent save
 ```
+
+`provision-oci.sh` opens the same three in the network security group.
 
 ## The host key is permanent
 
@@ -121,6 +125,33 @@ on first use and they deserve something to check against:
 
 ```sh
 ssh-keygen -lf hostkey.pub
+```
+
+## The API host
+
+`api.dungeonbooks.com` is a second A record to the same VM, **orange-clouded**.
+SSH is why `shop.` cannot be proxied; HTTP has no such problem, and the API is
+the one thing here that benefits from Cloudflare in front of it: an
+unauthenticated endpoint that creates orders on Square. The Caddyfile lists
+Cloudflare's ranges as trusted proxies so the API rate-limits on the visitor's
+address rather than the edge's.
+
+The Go process serves the API on `127.0.0.1:8080` (`API_ADDR`; empty turns it
+off). Caddy reverse-proxies to it and sets `X-Client-IP`, which the API trusts
+because nothing but Caddy can reach the port. Open 80 and 443 in both firewall
+layers, same as for the landing page.
+
+Agent-facing files under `deploy/site/` (`llms.txt`, `llms-full.txt`,
+`skill.md`, `openapi.json`, `docs/`) ship with the landing page to
+`/var/www/shop`. `llms-full.txt` is generated; after editing a page under
+`docs/` regenerate it with `scripts/llms-full.sh` and the test suite will hold
+you to it.
+
+Check before announcing:
+
+```sh
+curl -s https://api.dungeonbooks.com/v1/books | head
+curl -sI https://shop.dungeonbooks.com/llms.txt | grep -i '^link'
 ```
 
 ## Install
