@@ -390,29 +390,37 @@ func (c *cli) buy(ctx context.Context, args []string) int {
 			// Interrupted. The link would otherwise stay payable for a day,
 			// against an order nobody is watching; tidy it unless asked not to.
 			if *keep {
-				fmt.Fprintf(c.stderr, "left checkout %s live; pay at %s or cancel with: dungeon cancel %s\n", out.CheckoutID, out.CheckoutURL, out.CheckoutID)
+				c.note(fmt.Sprintf("left checkout %s live; pay at %s or cancel with: dungeon cancel %s", out.CheckoutID, out.CheckoutURL, out.CheckoutID))
 				return exitWaiting
 			}
 			bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			if err := c.api.Cancel(bg, out.CheckoutID); err != nil {
-				fmt.Fprintf(c.stderr, "could not cancel checkout %s: %v\n", out.CheckoutID, err)
+				c.note(fmt.Sprintf("could not cancel checkout %s: %v", out.CheckoutID, err))
 				return exitError
 			}
-			fmt.Fprintln(c.stderr, "abandoned; the checkout link no longer works")
+			c.note("abandoned; the checkout link no longer works")
 			return exitError
 		case <-time.After(min(pollEvery, max(time.Until(deadline), 0))):
 			// Bounded by the deadline, so a short --wait is honoured rather
 			// than rounded up to the poll interval.
 		}
-		o, err := c.api.Order(ctx, out.OrderID)
+		// Each poll is bounded by the deadline too, so a stalled API cannot
+		// stretch a short wait by a whole request timeout.
+		pollCtx, cancelPoll := context.WithDeadline(ctx, deadline.Add(pollEvery))
+		o, err := c.api.Order(pollCtx, out.OrderID)
+		cancelPoll()
 		if err != nil {
 			if ctx.Err() != nil {
 				continue // the select above will handle the interrupt
 			}
-			// A failed poll is not a failed order. Keep waiting, but not
-			// past the deadline: an API that is down for an hour must still
-			// hand control back.
+			// An order the API says does not exist will not start existing.
+			if shopapi.IsStatus(err, 404) || shopapi.IsStatus(err, 400) {
+				return c.fail(err)
+			}
+			// Any other failed poll is not a failed order. Keep waiting, but
+			// not past the deadline: an API that is down for an hour must
+			// still hand control back.
 			if time.Now().After(deadline) {
 				return c.stillWaiting(out.OrderID, *wait, shopapi.Order{OrderID: out.OrderID, State: shopapi.StateAwaitingPayment})
 			}
@@ -429,6 +437,15 @@ func (c *cli) buy(ctx context.Context, args []string) int {
 		if time.Now().After(deadline) {
 			return c.stillWaiting(out.OrderID, *wait, o)
 		}
+	}
+}
+
+// note is a status line for a human, or a JSON error for a machine.
+func (c *cli) note(msg string) {
+	if c.json {
+		emit(c.stderr, map[string]string{"error": msg})
+	} else {
+		fmt.Fprintln(c.stderr, msg)
 	}
 }
 

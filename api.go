@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -334,9 +335,15 @@ func (s *apiShop) handler() http.Handler {
 			return
 		}
 		var req shopapi.CheckoutRequest
-		body := http.MaxBytesReader(w, r.Body, maxBody)
-		if err := json.NewDecoder(body).Decode(&req); err != nil {
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
+		if err := dec.Decode(&req); err != nil {
 			writeErr(w, apiErr(http.StatusBadRequest, "bad request body: %s", err))
+			return
+		}
+		// One object and nothing after it. A valid request followed by
+		// garbage is a malformed request, not a request.
+		if dec.Decode(&struct{}{}) != io.EOF {
+			writeErr(w, apiErr(http.StatusBadRequest, "bad request body: trailing data after the request"))
 			return
 		}
 		out, e := s.checkout(r.Context(), req)
@@ -365,7 +372,9 @@ func (s *apiShop) handler() http.Handler {
 		writeErr(w, apiErr(http.StatusNotFound, "no such route; see https://shop.dungeonbooks.com/llms.txt"))
 	})
 
-	return http.TimeoutHandler(accessLog(lim.limit(mux)), apiTimeout, `{"error":"timed out"}`)
+	// The log sits outside the timeout so a request that timed out is logged
+	// with the 503 it got, not the 200 the inner handler never sent.
+	return accessLog(http.TimeoutHandler(lim.limit(mux), apiTimeout, `{"error":"timed out"}`))
 }
 
 // apiRoutes is every pattern the handler serves, in one place so a test can
@@ -431,6 +440,19 @@ func clientKey(r *http.Request) string {
 		return addrKey(&net.TCPAddr{IP: ip})
 	}
 	return host
+}
+
+// loopbackAddr reports whether addr binds only to this machine.
+func loopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // startAPI serves the API on addr in the background. A listener that fails

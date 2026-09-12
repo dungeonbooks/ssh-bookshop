@@ -63,6 +63,12 @@ func main() {
 		apiAddr = "127.0.0.1:8080"
 	}
 	if apiAddr != "" {
+		// Loopback only. The API trusts X-Client-IP because nothing but Caddy
+		// can reach it; a public bind would make that header spoofable and
+		// expose an order-creating endpoint with no WAF in front of it.
+		if !loopbackAddr(apiAddr) {
+			log.Fatal("API_ADDR must be a loopback address; Caddy fronts the API", "addr", apiAddr)
+		}
 		api = startAPI(apiAddr, shop, done)
 	}
 

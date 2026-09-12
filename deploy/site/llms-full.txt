@@ -287,8 +287,8 @@ ssh shop.dungeonbooks.com cancel <checkout_id>
 ```
 
 Same shapes and same exit codes as the dungeon CLI: 0 done, 1 something
-failed, 2 malformed or a request the shop turned down, 3 the order is still
-waiting. Errors are JSON on stderr. `buy` returns the checkout at once; poll
+failed or you were rate limited, 2 malformed or a request the shop turned
+down (400, 404, 409), 3 the order is still waiting. Errors are JSON on stderr. `buy` returns the checkout at once; poll
 with `order`. Checkouts share the API's rate limit: a burst of three, then one
 every five seconds.
 

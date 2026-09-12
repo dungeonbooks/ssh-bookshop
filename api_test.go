@@ -117,10 +117,16 @@ func testShop(t *testing.T) (*apiShop, *stubSquare) {
 
 func do(t *testing.T, h http.Handler, method, path string, body any) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
+	// A string goes on the wire as is, so a test can send bytes that are not
+	// JSON at all; anything else is encoded.
 	var rdr io.Reader
-	if body != nil {
-		b, _ := json.Marshal(body)
-		rdr = bytes.NewReader(b)
+	switch b := body.(type) {
+	case nil:
+	case string:
+		rdr = strings.NewReader(b)
+	default:
+		enc, _ := json.Marshal(b)
+		rdr = bytes.NewReader(enc)
 	}
 	req := httptest.NewRequest(method, path, rdr)
 	rec := httptest.NewRecorder()
@@ -229,6 +235,7 @@ func TestCheckoutRefusals(t *testing.T) {
 		{"a sum that would overflow", shopapi.CheckoutRequest{Items: []shopapi.Item{{ISBN: isbnStocked, Qty: 6}, {ISBN: isbnStocked, Qty: math.MaxInt}}, Fulfilment: "pickup"}, 400, "at most 10"},
 		{"not carried", shopapi.CheckoutRequest{Items: []shopapi.Item{{ISBN: isbnGone, Qty: 1}}, Fulfilment: "pickup"}, 409, "sold out here"},
 		{"not json", "nonsense", 400, "bad request body"},
+		{"trailing garbage", `{"items":[{"isbn":"` + isbnStocked + `","qty":1}],"fulfilment":"pickup"} garbage`, 400, "trailing data"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, st := testShop(t)
@@ -421,6 +428,17 @@ func TestOrderIDIsEscaped(t *testing.T) {
 	}
 	if got != "/v2/orders/a%2Fb%3Fx=1" {
 		t.Errorf("Square saw %q", got)
+	}
+}
+
+func TestLoopbackAddr(t *testing.T) {
+	for addr, want := range map[string]bool{
+		"127.0.0.1:8080": true, "[::1]:8080": true, "localhost:8080": true,
+		"0.0.0.0:8080": false, ":8080": false, "10.0.0.5:8080": false, "nonsense": false,
+	} {
+		if got := loopbackAddr(addr); got != want {
+			t.Errorf("loopbackAddr(%q) = %v, want %v", addr, got, want)
+		}
 	}
 }
 

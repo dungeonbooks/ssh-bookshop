@@ -82,6 +82,13 @@ func TestLLMsFullInlinesEveryPage(t *testing.T) {
 			t.Errorf("llms-full.txt does not contain docs/%s.md as written; regenerate it (see deploy/README.md)", page)
 		}
 	}
+	skill, err := os.ReadFile("deploy/site/skill.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(full), strings.TrimSpace(string(skill))) {
+		t.Error("llms-full.txt does not contain skill.md as written; regenerate it")
+	}
 	index, err := os.ReadFile("deploy/site/llms.txt")
 	if err != nil {
 		t.Fatal(err)
