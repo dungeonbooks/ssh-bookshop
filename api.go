@@ -204,7 +204,11 @@ func (s *apiShop) checkout(ctx context.Context, req shopapi.CheckoutRequest) (sh
 	var subtotal int64
 	for _, l := range lines {
 		b := s.book(l.idx)
-		if !b.Sellable {
+		// Only a book Square has never priced is refused here. One that has
+		// sold out since goes on to the recheck, which is what notices it
+		// coming back into stock; refusing on the overlay alone would make a
+		// sellout permanent for the life of the process.
+		if b.VariationID == "" {
 			e := apiErr(http.StatusConflict, "%s is sold out here", b.BookTitle)
 			e.BuyURL = b.BuyURL()
 			return shopapi.Checkout{}, e
@@ -230,6 +234,13 @@ func (s *apiShop) checkout(ctx context.Context, req shopapi.CheckoutRequest) (sh
 		if errors.As(err, &ce) {
 			e := apiErr(http.StatusConflict, "%s", ce.msg)
 			e.PriceCents = ce.cents
+			// The overlay was just updated from what Square said, so if the
+			// book is no longer for sale here the refusal says where else.
+			if i, ok := s.find(ce.isbn); ok {
+				if b := s.book(i); !b.Sellable {
+					e.BuyURL = b.BuyURL()
+				}
+			}
 			return shopapi.Checkout{}, e
 		}
 		return shopapi.Checkout{}, apiErr(http.StatusBadGateway, "%s", err)

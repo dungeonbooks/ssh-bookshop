@@ -58,7 +58,8 @@
           "404": {"$ref": "#/components/responses/Error"},
           "409": {"description": "Already paid; a paid order is never cancelled here.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "429": {"$ref": "#/components/responses/TooMany"},
-          "502": {"$ref": "#/components/responses/Error"}
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
         }
       }
     },
@@ -71,7 +72,8 @@
           "200": {"description": "The order's state.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Order"}}}},
           "404": {"$ref": "#/components/responses/Error"},
           "429": {"$ref": "#/components/responses/TooMany"},
-          "502": {"$ref": "#/components/responses/Error"}
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
         }
       }
     }

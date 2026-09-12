@@ -87,7 +87,9 @@ func (c *squareClient) recheck(ctx context.Context, items []cartItem) (map[strin
 			// Gone from the catalog entirely. Recorded as unsellable rather
 			// than skipped, so the shelf that reads this back stops offering
 			// the book instead of sending every retry into the same refusal.
-			out[it.variationID] = freshItem{}
+			// Untracked, because there is no count to report: a removed book
+			// is not "0 in stock", it is not carried.
+			out[it.variationID] = freshItem{untracked: true}
 			continue
 		}
 		ids = append(ids, id)

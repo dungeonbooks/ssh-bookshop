@@ -288,9 +288,36 @@ func TestCheckoutStaleShelf(t *testing.T) {
 		if rec.Code != http.StatusConflict || !strings.Contains(out["error"].(string), "sold out") {
 			t.Fatalf("status = %d, body = %v", rec.Code, out)
 		}
+		if !strings.Contains(out["buy_url"].(string), "bookshop.org") {
+			t.Errorf("a book Square dropped should say where else to buy it: %v", out)
+		}
 		_, shelf := do(t, h, http.MethodGet, "/v1/books/"+isbnStocked, nil)
 		if shelf["sellable"] != false {
 			t.Error("shelf still offers a book Square no longer lists, so every retry would hit the same 409")
+		}
+		if _, has := shelf["stock"]; has || shelf["tracked"] != false {
+			t.Errorf("a removed book is not carried, not 0 in stock: %v", shelf)
+		}
+	})
+	t.Run("sold out then restocked", func(t *testing.T) {
+		s, st := testShop(t)
+		st.stock["VAR1"] = 0
+		h := s.handler()
+		req := shopapi.CheckoutRequest{Items: []shopapi.Item{{ISBN: isbnStocked, Qty: 1}}, Fulfilment: "pickup"}
+		rec, out := do(t, h, http.MethodPost, "/v1/checkout", req)
+		if rec.Code != http.StatusConflict || !strings.Contains(out["buy_url"].(string), "bookshop.org") {
+			t.Fatalf("sold out: status = %d, body = %v", rec.Code, out)
+		}
+		// Back on the shelf at Square. The overlay said sold out, but the
+		// recheck is what decides, so the next checkout must go through.
+		st.stock["VAR1"] = 3
+		rec, out = do(t, h, http.MethodPost, "/v1/checkout", req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("restocked: status = %d, body = %v; a sellout must not be permanent", rec.Code, out)
+		}
+		_, shelf := do(t, h, http.MethodGet, "/v1/books/"+isbnStocked, nil)
+		if shelf["sellable"] != true || shelf["stock"] != 3.0 {
+			t.Errorf("shelf after restock: %v", shelf)
 		}
 	})
 	t.Run("sold out", func(t *testing.T) {

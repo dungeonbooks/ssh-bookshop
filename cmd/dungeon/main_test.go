@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dungeonbooks/ssh-bookshop/internal/shopapi"
 )
@@ -93,6 +94,12 @@ func TestCommands(t *testing.T) {
 	if code, _, se := try("buy", "111", "--pickup", "--ship"); code != exitUsage || !strings.Contains(se, "usage") {
 		t.Errorf("buy with both: %d %q", code, se)
 	}
+	if code, _, se := try("--json", "buy", "111", "--pickup", "--ship"); code != exitUsage || !strings.HasPrefix(se, "{") || strings.Contains(se, "usage:") {
+		t.Errorf("buy with both, json mode: %d %q (want a JSON error, no usage text)", code, se)
+	}
+	if code, _, se := try("--json", "buy", "111:x", "--pickup"); code != exitUsage || !strings.HasPrefix(se, "{") {
+		t.Errorf("bad qty, json mode: %d %q", code, se)
+	}
 	if code, _, se := try("buy", "222", "--pickup"); code != exitUsage || !strings.Contains(se, "buy it at https://bookshop.org") {
 		t.Errorf("buy sold out: %d %q", code, se)
 	}
@@ -113,6 +120,24 @@ func TestCommands(t *testing.T) {
 	}
 	if code, _, se := try("dance"); code != exitUsage || !strings.Contains(se, "usage:") {
 		t.Errorf("unknown: %d %q", code, se)
+	}
+}
+
+// TestBuyHonoursAShortWait: --wait shorter than the poll interval must still
+// return when it runs out, not after the interval.
+func TestBuyHonoursAShortWait(t *testing.T) {
+	srv := fakeAPI(t, false)
+	var so, se bytes.Buffer
+	start := time.Now()
+	code := run([]string{"--api", srv.URL, "buy", "111", "--pickup", "--wait", "300ms"}, &so, &se)
+	if code != exitWaiting {
+		t.Fatalf("code %d, stdout %q stderr %q", code, so.String(), se.String())
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("took %s for a 300ms wait", took)
+	}
+	if !strings.Contains(so.String(), "still waiting") {
+		t.Errorf("stdout %q", so.String())
 	}
 }
 

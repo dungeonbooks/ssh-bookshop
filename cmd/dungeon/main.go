@@ -164,6 +164,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return exitUsage
 }
 
+// usage reports a malformed command. Machine mode stays machine-readable:
+// the message goes out as JSON and the usage text is left to --help.
+func (c *cli) usage(msg, text string) int {
+	if c.json {
+		emit(c.stderr, map[string]string{"error": msg})
+	} else {
+		fmt.Fprintln(c.stderr, msg)
+		fmt.Fprintln(c.stderr)
+		io.WriteString(c.stderr, text)
+	}
+	return exitUsage
+}
+
 func wantsHelp(args []string) bool {
 	for _, a := range args {
 		if a == "--help" || a == "-h" || a == "help" {
@@ -310,8 +323,7 @@ func (c *cli) buy(ctx context.Context, args []string) int {
 	rest := args
 	for {
 		if err := fs.Parse(rest); err != nil {
-			io.WriteString(c.stderr, buyUsage)
-			return exitUsage
+			return c.usage(err.Error(), buyUsage)
 		}
 		rest = fs.Args()
 		if len(rest) == 0 {
@@ -324,9 +336,11 @@ func (c *cli) buy(ctx context.Context, args []string) int {
 		io.WriteString(c.stdout, buyUsage)
 		return exitOK
 	}
-	if len(isbns) == 0 || *pickup == *ship {
-		io.WriteString(c.stderr, buyUsage)
-		return exitUsage
+	switch {
+	case len(isbns) == 0:
+		return c.usage("buy needs at least one isbn", buyUsage)
+	case *pickup == *ship:
+		return c.usage("choose one of --pickup or --ship", buyUsage)
 	}
 	req := shopapi.CheckoutRequest{Fulfilment: shopapi.FulfilPickup, IdempotencyKey: *key}
 	if *ship {
@@ -338,8 +352,7 @@ func (c *cli) buy(ctx context.Context, args []string) int {
 		if hasQty {
 			n, err := strconv.Atoi(q)
 			if err != nil || n < 1 {
-				fmt.Fprintf(c.stderr, "bad quantity in %s\n", a)
-				return exitUsage
+				return c.usage("bad quantity in "+a, buyUsage)
 			}
 			qty = n
 		}
@@ -388,7 +401,9 @@ func (c *cli) buy(ctx context.Context, args []string) int {
 			}
 			fmt.Fprintln(c.stderr, "abandoned; the checkout link no longer works")
 			return exitError
-		case <-time.After(pollEvery):
+		case <-time.After(min(pollEvery, max(time.Until(deadline), 0))):
+			// Bounded by the deadline, so a short --wait is honoured rather
+			// than rounded up to the poll interval.
 		}
 		o, err := c.api.Order(ctx, out.OrderID)
 		if err != nil {
