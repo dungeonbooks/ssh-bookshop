@@ -1,0 +1,157 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Dungeon Books",
+    "version": "1",
+    "summary": "The book club shelf and a hosted Square checkout, for agents.",
+    "description": "Read the shelf, price an order, choose pickup or shipping, and get a checkout URL for a human to pay on. Payment never passes through this API. No authentication.",
+    "contact": {"email": "hello@dungeonbooks.com"}
+  },
+  "servers": [{"url": "https://api.dungeonbooks.com"}],
+  "paths": {
+    "/v1/books": {
+      "get": {
+        "operationId": "listBooks",
+        "summary": "The shelf",
+        "responses": {
+          "200": {"description": "Every book, with price and stock where known.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Shelf"}}}},
+          "429": {"$ref": "#/components/responses/TooMany"}
+        }
+      }
+    },
+    "/v1/books/{isbn}": {
+      "get": {
+        "operationId": "getBook",
+        "summary": "One book",
+        "parameters": [{"name": "isbn", "in": "path", "required": true, "schema": {"type": "string"}, "description": "ISBN-13 as listed on the shelf."}],
+        "responses": {
+          "200": {"description": "The book.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Book"}}}},
+          "404": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/TooMany"}
+        }
+      }
+    },
+    "/v1/checkout": {
+      "post": {
+        "operationId": "createCheckout",
+        "summary": "Build an order and get the hosted checkout URL",
+        "description": "Rechecks price and stock against the point of sale before creating anything. Hand checkout_url to the person, then poll the order.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CheckoutRequest"}}}},
+        "responses": {
+          "201": {"description": "The checkout, ready for a human.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Checkout"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "409": {"description": "The shelf moved: sold out, short, repriced, or not carried. price_cents carries the new price; buy_url says where else to buy.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "429": {"$ref": "#/components/responses/TooMany"},
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/checkout/{id}": {
+      "delete": {
+        "operationId": "cancelCheckout",
+        "summary": "Abandon an unpaid checkout",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "checkout_id from the checkout response."}],
+        "responses": {
+          "204": {"description": "Cancelled. The link no longer works."},
+          "404": {"$ref": "#/components/responses/Error"},
+          "409": {"description": "Already paid; a paid order is never cancelled here.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "429": {"$ref": "#/components/responses/TooMany"},
+          "502": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/orders/{id}": {
+      "get": {
+        "operationId": "getOrder",
+        "summary": "Whether an order has been paid",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "order_id from the checkout response."}],
+        "responses": {
+          "200": {"description": "The order's state.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Order"}}}},
+          "404": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/TooMany"},
+          "502": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "Error": {"description": "What went wrong, in one sentence.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "TooMany": {"description": "Rate limited. Retry-After says when.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+    },
+    "schemas": {
+      "Book": {
+        "type": "object",
+        "required": ["isbn", "title", "author", "collection", "featured", "blurb", "price_cents", "sellable", "tracked"],
+        "properties": {
+          "isbn": {"type": "string"},
+          "title": {"type": "string"},
+          "author": {"type": "string"},
+          "collection": {"type": "string"},
+          "month": {"type": "string", "description": "Book club month, YYYY-MM."},
+          "featured": {"type": "boolean", "description": "The current pick."},
+          "format": {"type": "string"},
+          "pages": {"type": "integer"},
+          "blurb": {"type": "string"},
+          "price_cents": {"type": "integer", "description": "0 when not for sale here."},
+          "sellable": {"type": "boolean", "description": "True when it can be checked out here."},
+          "tracked": {"type": "boolean", "description": "True when stock is a real count."},
+          "stock": {"type": "integer", "description": "Only present when tracked."},
+          "buy_url": {"type": "string", "format": "uri", "description": "Only present when not sellable: where to buy it instead."}
+        }
+      },
+      "Shelf": {
+        "type": "object",
+        "required": ["books", "shipping", "prices_as_of"],
+        "properties": {
+          "books": {"type": "array", "items": {"$ref": "#/components/schemas/Book"}},
+          "shipping": {"type": "object", "required": ["region", "note"], "properties": {"region": {"type": "string"}, "note": {"type": "string"}}},
+          "prices_as_of": {"type": "string", "format": "date-time"}
+        }
+      },
+      "CheckoutRequest": {
+        "type": "object",
+        "required": ["items", "fulfilment"],
+        "properties": {
+          "items": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["isbn", "qty"], "properties": {"isbn": {"type": "string"}, "qty": {"type": "integer", "minimum": 1, "maximum": 10}}}},
+          "fulfilment": {"type": "string", "enum": ["pickup", "ship"], "description": "Ask the person. Never guess."},
+          "idempotency_key": {"type": "string", "description": "Optional. A retry with the same key returns the same checkout."}
+        }
+      },
+      "Checkout": {
+        "type": "object",
+        "required": ["order_id", "checkout_id", "checkout_url", "fulfilment", "subtotal_cents", "shipping_cents", "shipping_exact", "total_cents", "note"],
+        "properties": {
+          "order_id": {"type": "string"},
+          "checkout_id": {"type": "string"},
+          "checkout_url": {"type": "string", "format": "uri", "description": "Square's hosted page. A human pays here."},
+          "fulfilment": {"type": "string", "enum": ["pickup", "ship"]},
+          "subtotal_cents": {"type": "integer"},
+          "shipping_cents": {"type": "integer"},
+          "shipping_exact": {"type": "boolean", "description": "False when a book had no weight and the flat rate applied."},
+          "total_cents": {"type": "integer", "description": "Before tax."},
+          "note": {"type": "string"}
+        }
+      },
+      "Order": {
+        "type": "object",
+        "required": ["order_id", "state"],
+        "properties": {
+          "order_id": {"type": "string"},
+          "state": {"type": "string", "enum": ["awaiting_payment", "paid"]}
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {"type": "string"},
+          "buy_url": {"type": "string", "format": "uri"},
+          "price_cents": {"type": "integer"}
+        }
+      }
+    }
+  }
+}

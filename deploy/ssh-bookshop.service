@@ -22,6 +22,10 @@ EnvironmentFile=/etc/ssh-bookshop.env
 # applied after EnvironmentFile=.
 Environment=PORT=22
 
+# The HTTP API for agents, on loopback only. Caddy fronts it as
+# api.dungeonbooks.com; nothing else can reach this port. Empty disables it.
+Environment=API_ADDR=127.0.0.1:8080
+
 # Storage here is persistent, so ephemeralStorage() is false and a missing
 # SSH_HOST_KEY would only warn, then generate a throwaway key at .ssh/id_ed25519
 # and change the shop's identity. Say it is ephemeral to make the miss fatal.
