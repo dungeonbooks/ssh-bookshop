@@ -70,7 +70,9 @@ shop.dungeonbooks.com {
 	# cache keeps edits visible without hammering the box.
 	@fonts path /fonts/*
 	header @fonts Cache-Control "public, max-age=604800"
-	header /index.html Cache-Control "public, max-age=300"
+	# Both spellings: the matcher reads the request path, and visitors arrive at "/".
+	@page path / /index.html
+	header @page Cache-Control "public, max-age=300"
 	# Agent-facing files change with the code, so keep them short too.
 	@agentfiles path /llms.txt /llms-full.txt /skill.md /openapi.json /docs/*
 	header @agentfiles Cache-Control "public, max-age=300"
