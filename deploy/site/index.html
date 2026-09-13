@@ -14,6 +14,9 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Dungeon Books. A monthly science fiction and fantasy book club.">
 <meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://shop.dungeonbooks.com/">
+<meta name="theme-color" content="#110e0c">
+<link rel="preload" href="/fonts/RuneScape-Plain-12.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🕯️</text></svg>">
 <style>
   @font-face {
@@ -27,10 +30,17 @@
     --ink: hsl(38 22% 80%);
     --gold: hsl(45 70% 60%);
     --ember: hsl(30 100% 56%);
+    /* --dim is chrome only; it is 4.0:1 here. Reading text uses --prose. */
     --dim: hsl(32 14% 44%);
+    --prose: hsl(34 12% 62%);
     --edge: hsl(0 0% 0%);
     --panel: hsl(26 12% 10%);
     --bevel: hsl(38 16% 26%);
+
+    /* The pixel face is a 12px bitmap: fine for headings, unreadable in
+       sentences. */
+    --display: "RuneScape Plain", ui-monospace, monospace;
+    --body: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   }
 
   * { box-sizing: border-box; }
@@ -45,7 +55,7 @@
     color: var(--ink);
     /* The pixel face is the nostalgia. Smoothing off so it stays crisp
        instead of being antialiased into a modern webfont. */
-    font-family: "RuneScape Plain", ui-monospace, monospace;
+    font-family: var(--display);
     font-size: 21px;
     line-height: 1.75;
     -webkit-font-smoothing: none;
@@ -78,14 +88,12 @@
     background: radial-gradient(120% 90% at 50% 45%, transparent 55%, hsl(0 0% 0% / .55) 100%);
   }
 
-  /* One column for everything, so the wordmark, the line under it, the command
-     box and the answers all share an edge. 23rem is the measured width of the
-     lede at 21px (358px) plus a little slack, so it holds one line on desktop
-     without the column being set by whatever the text happens to do. Below that
-     the column is simply the screen, and every element narrows with it. */
+  /* One column, so everything shares an edge. 25rem is about 46 characters of
+     15px monospace, and still wider than the lede (358px). Below that the
+     column is the screen. */
   main {
     width: 100%;
-    max-width: 23rem;
+    max-width: 25rem;
     margin: 0 auto;
     position: relative;
     z-index: 3;
@@ -135,39 +143,49 @@
   }
   .cmd code::before { content: "$ "; color: var(--dim); text-shadow: none; }
 
+  /* Reading-text contrast and a real tap target; negative margins keep the box. */
   button {
-    font-family: "RuneScape Plain", ui-monospace, monospace;
+    font-family: var(--display);
     font-size: .85rem;
-    color: var(--dim);
+    color: var(--prose);
     background: none;
     border: 0;
-    padding: .1rem .2rem;
+    padding: .35rem .4rem;
+    margin: -.35rem -.4rem;
+    min-height: 24px;
     cursor: pointer;
     flex-shrink: 0;
   }
   button:hover { color: var(--ember); text-shadow: 0 0 8px hsl(30 100% 50% / .5); }
   button:focus-visible { outline: 1px solid var(--dim); outline-offset: 3px; }
 
-  dl { margin: 0; line-height: 1.8; }
+  dl { margin: 0; }
   dt {
     font-size: 1rem;
     color: var(--gold);
-    margin-top: 2.4rem;
+    margin-top: 2.2rem;
+    line-height: 1.8;
   }
   dt:first-child { margin-top: 0; }
-  dd { margin: 0; color: var(--dim); font-size: .92rem; }
-
-  /* The fingerprint gets read character by character, so legibility beats
-     period accuracy: antialiased monospace, and allowed to wrap anywhere. */
-  dd.fp {
-    font-family: ui-monospace, monospace;
+  dd {
+    margin: .1rem 0 0;
+    font-family: var(--body);
     -webkit-font-smoothing: antialiased;
-    font-size: .72rem;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--prose);
+  }
+
+  /* Compared character by character, so it may wrap anywhere. */
+  dd.fp {
+    font-size: 13px;
+    letter-spacing: .01em;
     word-break: break-all;
   }
 
-  a { color: var(--dim); text-decoration: none; border-bottom: 1px solid hsl(32 10% 26%); }
+  a { color: var(--prose); text-decoration: none; border-bottom: 1px solid hsl(32 12% 32%); }
   a:hover { color: var(--ember); border-bottom-color: currentColor; }
+  a:focus-visible { outline: 1px solid var(--ember); outline-offset: 3px; border-bottom-color: transparent; }
 
   /* Enough of a gap to separate the answers from the footnotes above, without
      the dead band that 7rem left. The page still opens on the wordmark and the
@@ -175,24 +193,29 @@
   .faq { margin-top: 3.25rem; }
 
   .faq h2 {
-    font-family: "RuneScape Plain", ui-monospace, monospace;
+    font-family: var(--display);
     font-weight: 400;
     font-size: 1rem;
     color: var(--gold);
-    margin: 2.4rem 0 .5rem;
+    margin: 2.2rem 0 .6rem;
+    line-height: 1.8;
   }
   .faq h2:first-child { margin-top: 0; }
 
   .faq p {
     margin: 0 0 .9rem;
-    font-size: .92rem;
-    color: var(--dim);
+    font-family: var(--body);
+    -webkit-font-smoothing: antialiased;
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--prose);
   }
 
 
   @media (max-width: 480px) {
     body { padding-top: 7vh; font-size: 19px; }
-    .cmd { flex-direction: column; align-items: flex-start; gap: .4rem; }
+    .cmd { flex-direction: column; align-items: flex-start; gap: .2rem; }
+    button { min-height: 44px; display: flex; align-items: center; }
   }
 </style>
 </head>
@@ -204,7 +227,7 @@
 
   <div class="cmd">
     <code id="cmd">ssh shop.dungeonbooks.com</code>
-    <button id="copy" type="button">copy</button>
+    <button id="copy" type="button" aria-live="polite">copy</button>
   </div>
 
   <dl>
@@ -214,8 +237,8 @@
     <dd><a href="https://squareup.com/customer-programs/enroll/aJST7ePq1UwZ?utm_source=ssh-shop&amp;utm_medium=website">sign up</a></dd>
     <dt>host key</dt>
     <dd class="fp">SHA256:EXv5X+C23tnnR0ftxRP/Iq+3z3rL1ezcpbAy9S+zXLg</dd>
-    <dt>for agents</dt>
-    <dd><a href="/llms.txt">llms.txt</a></dd>
+    <dt>source</dt>
+    <dd><a href="https://github.com/dungeonbooks/ssh-bookshop">github.com/dungeonbooks/ssh-bookshop</a></dd>
   </dl>
 
   <section class="faq">
