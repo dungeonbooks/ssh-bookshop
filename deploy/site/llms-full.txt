@@ -295,8 +295,13 @@ with `order`. Checkouts share the API's rate limit: a burst of three, then one
 every five seconds.
 
 Automation should prefer the HTTP API. Sandboxes often have no SSH client, no
-key, and a host-key prompt that blocks a script; pass
-`-o StrictHostKeyChecking=accept-new` if you must.
+key, and a host-key prompt that blocks a script. If you must script SSH, pin
+the host key rather than accepting whatever is offered on first connection:
+this line is the key behind the fingerprint above, ready for `known_hosts`.
+
+```
+shop.dungeonbooks.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIITy6szP54vkrtWfCrSyQ6uFYL9JGjRWiqgzK3yVm9ux
+```
 
 ## What is stored
 
