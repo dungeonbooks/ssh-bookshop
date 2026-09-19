@@ -145,7 +145,9 @@ Agent-facing files under `deploy/site/` (`llms.txt`, `llms-full.txt`,
 `skill.md`, `openapi.json`, `docs/`) ship with the landing page to
 `/var/www/shop`. `llms-full.txt` is generated; after editing a page under
 `docs/` regenerate it with `scripts/llms-full.sh` and the test suite will hold
-you to it.
+you to it. The pages under `docs/` also publish on docs.dungeonbooks.com under
+`/agents/`, copied from this directory at that site's build; a change here is
+live there on its next build, daily or by hand.
 
 Check before announcing:
 

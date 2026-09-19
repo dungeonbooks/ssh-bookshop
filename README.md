@@ -49,7 +49,9 @@ The same shelf and checkout are reachable without a terminal:
 - **SSH command mode**: `ssh shop.dungeonbooks.com books` answers in JSON and
   exits. `command.go`.
 - **Discovery**: `shop.dungeonbooks.com/llms.txt` links the docs, the OpenAPI
-  document, and a skill file agents can install.
+  document, and a skill file agents can install. The same docs are pages at
+  [docs.dungeonbooks.com/agents](https://docs.dungeonbooks.com/agents), built
+  from `deploy/site/docs` by the policies repo.
 
 All of it stops at the hosted Square checkout URL; a human pays there.
 
