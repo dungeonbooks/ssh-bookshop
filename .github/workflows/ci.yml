@@ -49,3 +49,32 @@ jobs:
       # race, which is exactly the kind of failure that only shows up sometimes.
       - name: test
         run: go test -count=1 -race ./...
+
+  # The apex Worker in deploy/edge is TypeScript, so it gets its own job. No
+  # deploy here: that still needs a Cloudflare token the repo does not hold.
+  edge:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/edge
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: deploy/edge/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: deploy/edge/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # wrangler types, then tsc.
+      - run: pnpm check
+
+      # Bundles the Worker without uploading it, so a broken import of the
+      # llms.txt fails here rather than at deploy time.
+      - run: pnpm exec wrangler deploy --dry-run
