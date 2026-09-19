@@ -1,0 +1,16 @@
+# Dungeon Books
+
+> An independent science fiction, fantasy, and RPG bookstore at 115 Brunswick St, Storefront 1R, Jersey City, NJ. This is the retail storefront, for humans: the whole catalog (books, RPGs, dice, merch) with a Square checkout, and no API. Store hours, policies, and how to buy are documented at https://docs.dungeonbooks.com. Agents can buy the monthly book club pick through a JSON API and a CLI; payment happens on a hosted Square page that a human opens.
+
+## Docs
+
+- [Dungeon Books Docs](https://docs.dungeonbooks.com/llms.txt): hours, location, orders, events, policies, and the agent pages, one summary per page.
+- [Store](https://docs.dungeonbooks.com/store.md): hours, address, phone, email.
+- [Buying with an agent](https://docs.dungeonbooks.com/agents/index.md): the book club shelf as an API and a CLI.
+
+## Agents
+
+- [API reference](https://docs.dungeonbooks.com/agents/api.md): five endpoints at https://api.dungeonbooks.com, no auth, JSON.
+- [OpenAPI](https://shop.dungeonbooks.com/openapi.json): the same contract, machine-readable.
+- [Agent skill](https://shop.dungeonbooks.com/skill.md): drop into .claude/skills/ or equivalent.
+- [Everything the shop publishes](https://shop.dungeonbooks.com/llms.txt): the SSH shop's own index.
