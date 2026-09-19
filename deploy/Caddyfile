@@ -53,6 +53,14 @@ shop.dungeonbooks.com {
 	}
 	rewrite @md {path}.md
 	header /docs/* Content-Type "text/markdown; charset=utf-8"
+	# These pages also publish as HTML on docs.dungeonbooks.com, built from
+	# this same directory. The markdown here is the agent's copy; the page
+	# there is the one to index. Inside `route` so it runs after the plain
+	# `header Link` above, which would otherwise replace it.
+	route /docs/* {
+		@docpage path_regexp doc ^/docs/([a-z]+)(\.md)?$
+		header @docpage +Link "<https://docs.dungeonbooks.com/agents/{re.doc.1}>; rel=\"canonical\""
+	}
 	header /llms.txt Content-Type "text/markdown; charset=utf-8"
 	header /llms-full.txt Content-Type "text/markdown; charset=utf-8"
 	header /skill.md Content-Type "text/markdown; charset=utf-8"
@@ -74,6 +82,6 @@ shop.dungeonbooks.com {
 	@page path / /index.html
 	header @page Cache-Control "public, max-age=300"
 	# Agent-facing files change with the code, so keep them short too.
-	@agentfiles path /llms.txt /llms-full.txt /skill.md /openapi.json /docs/*
+	@agentfiles path /llms.txt /llms-full.txt /skill.md /openapi.json /docs/* /robots.txt
 	header @agentfiles Cache-Control "public, max-age=300"
 }
