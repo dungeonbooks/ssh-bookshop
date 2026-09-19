@@ -1,0 +1,16 @@
+{
+  "name": "dungeonbooks-edge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "types": "wrangler types",
+    "check": "pnpm types && tsc --noEmit",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "wrangler": "^4.135.0"
+  },
+  "packageManager": "pnpm@11.15.0"
+}

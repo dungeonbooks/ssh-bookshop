@@ -30,7 +30,10 @@ fills a sandbox catalog with the shelf.
 - `cmd/dungeon`: the CLI. `skill.md` beside it is embedded and also copied to
   `deploy/site/skill.md`; a test checks the copies match.
 - `deploy/`: Caddyfile, systemd unit, runbook, and the static site including
-  the agent-facing files.
+  the agent-facing files. `deploy/edge/` is a Cloudflare Worker for the
+  storefront hostnames, deployed but dormant; its README says why. The docs
+  pages also publish on docs.dungeonbooks.com, pulled from `deploy/site/docs`
+  by the policies repo's build.
 
 ## Rules that are not obvious from the code
 

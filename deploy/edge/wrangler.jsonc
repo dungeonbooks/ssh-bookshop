@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dungeonbooks-edge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  // llms.txt ships inside the Worker as text, so the storefront hostnames
+  // need nothing from any origin to answer it.
+  "rules": [{ "type": "Text", "globs": ["**/*.txt"], "fallthrough": false }],
+  // Square answers every apex request with a 301 to www, so both hostnames
+  // are bound. One exact path each; nothing here is a catch-all on the
+  // storefront, and the Worker passes through whatever it does not own.
+  //
+  // These routes do not fire today: Square holds both hostnames through
+  // Cloudflare for SaaS, which outranks this zone's DNS records, so requests
+  // never reach this zone's Workers. They are kept so the Worker takes over
+  // the moment the hostname is ours again. README.md has the details.
+  "routes": [
+    { "pattern": "dungeonbooks.com/llms.txt", "zone_name": "dungeonbooks.com" },
+    { "pattern": "www.dungeonbooks.com/llms.txt", "zone_name": "dungeonbooks.com" }
+  ]
+}
