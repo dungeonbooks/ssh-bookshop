@@ -179,6 +179,69 @@ For an ARM instance:
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' .
 ```
 
+## Deploying a change
+
+Merging to `main` deploys it. The `deploy` job in `.github/workflows/ci.yml`
+runs after the tests: it builds a release with `release.sh` (binary with the
+commit stamped in, `site/`, `VERSION`), joins the tailnet, and pipes the
+release over SSH to the `deploy` user. That user's only key is a forced command
+running `ssh-bookshop-deploy` through sudo, and that script:
+
+- refuses anything but a tarball of exactly those three entries, plain files and
+  directories only, with a commit hash for `VERSION`;
+- unpacks the release into `/opt/ssh-bookshop/releases/<sha>/`, never touching
+  a release that is live, and points the `/opt/ssh-bookshop/ssh-bookshop`
+  symlink (what the unit runs) at its binary;
+- restarts the shop and waits for the journal to show that version, `square
+  ready`, and the API answering. If any of that fails, or the deploy is cut off
+  first, it points the symlink back and restarts the previous release;
+- then points `/var/www/shop` (what Caddy serves) at the release's `site/` in
+  one rename, checks it through Caddy, and keeps the last five releases.
+
+The first deploy moves the hand-installed binary and `/var/www/shop` into a
+release called `manual`, so there is always something to roll back to.
+
+The journal's `starting ssh bookshop version=<sha>` line says what is live. To
+roll back, re-run the deploy job of an earlier run on `main`.
+
+CI cannot change the deploy script, the unit, or the Caddyfile. Those stay
+manual, so a compromised run can replace the shop binary but cannot widen what
+a deploy is allowed to touch. A change to `ssh-bookshop-deploy` goes live by
+re-running the setup below.
+
+To deploy by hand, from a clean checkout of the commit, over the admin key:
+
+```sh
+deploy/release.sh | ssh <admin>@<shop> sudo /usr/local/sbin/ssh-bookshop-deploy
+```
+
+### One-time setup
+
+1. **A key for CI.** `ssh-keygen -t ed25519 -N '' -C ssh-bookshop-ci -f ci_deploy`
+   on a trusted machine. The private half goes to GitHub and nowhere else.
+2. **The deploy user.** Copy `ssh-bookshop-deploy` and `setup-deploy-user.sh` to
+   the box and run `sudo bash setup-deploy-user.sh "$(cat ci_deploy.pub)"`. If
+   sshd has an `AllowUsers` or `AllowGroups` line, add `deploy` to it.
+3. **Tailscale.** In the policy, own `tag:ci-deploy` and grant it the shop node
+   on port 22 and nothing else. Create an auth key that is reusable, ephemeral,
+   pre-approved and tagged `tag:ci-deploy`. Tailnet Lock is on, so sign it on a
+   signing node with `tailscale lock sign <key>` before using it. Auth keys
+   expire (90 days at most), so put its renewal on the calendar.
+4. **GitHub.** Create an environment named `production`, limited to the `main`
+   branch, holding four secrets:
+   - `TS_AUTHKEY`: the signed auth key.
+   - `DEPLOY_SSH_KEY`: the private half of `ci_deploy`.
+   - `DEPLOY_HOST`: the shop's tailnet IP.
+   - `DEPLOY_KNOWN_HOSTS`: `ssh-keyscan -t ed25519 <tailnet-ip>` from a tailnet
+     machine, checked against `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
+     on the box. That is admin sshd's key, not the shop's.
+5. **Switch it on.** Set the repository variable `DEPLOY_ENABLED` to `true`.
+   Until then the job is skipped and `main` stays green.
+
+The repo is public, and so are its Actions logs. The host, the keys, and the
+tailnet address live only in those secrets; never put them in the workflow or
+in this file.
+
 ## Check before announcing
 
 ```sh

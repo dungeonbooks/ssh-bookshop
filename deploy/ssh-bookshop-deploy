@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# Installs one release of the shop, from a tarball on stdin (deploy/release.sh).
+#
+# Installed on the VM as /usr/local/sbin/ssh-bookshop-deploy, root-owned, and
+# run as root through sudo. It is the only command the deploy user's key can
+# run, so it takes nothing from its caller but the tarball and trusts none of
+# it. CI cannot change this script: updating it is a manual step on the box
+# (deploy/setup-deploy-user.sh), which keeps a compromised CI run from widening
+# what a deploy can do.
+#
+# Each release is a directory holding the binary and the site. Two symlinks
+# pick the live one: /opt/ssh-bookshop/ssh-bookshop, which the unit runs, and
+# /var/www/shop, which Caddy serves. The binary switches first and is rolled
+# back if it does not come up healthy, or if the deploy is cut off before it
+# has; the site switches only after that, in one rename.
+#
+# Prints only its own status lines. The journal is not echoed, because this
+# output lands in a public CI log.
+set -euo pipefail
+
+app=/opt/ssh-bookshop
+releases=$app/releases
+live=$app/ssh-bookshop
+site=/var/www/shop
+keep=5
+max_bytes=$((64 * 1024 * 1024))
+
+say() { printf 'deploy: %s\n' "$*"; }
+die() {
+  say "$*" >&2
+  exit 1
+}
+
+# One deploy at a time. CI serializes its own jobs, but a hand deploy could
+# overlap one and the two would fight over the symlinks and the rollback.
+exec 9>/run/lock/ssh-bookshop-deploy.lock
+flock -w 300 9 || die "another deploy has held the lock for five minutes"
+
+# Swap a symlink in one rename, so readers see the old target or the new one.
+point() {
+  ln -sfn "$1" "$2.next"
+  mv -Tf "$2.next" "$2"
+}
+
+# Set once the live binary has been switched and cleared once it is proven
+# healthy. Any exit in between, a dropped SSH session included, puts the
+# previous binary back.
+guard=""
+cleanup() {
+  if [ -n "$guard" ]; then
+    point "$guard" "$live"
+    systemctl restart ssh-bookshop || true
+    say "rolled back to $(basename "$(dirname "$guard")" | cut -c1-12)" >&2
+  fi
+  rm -rf "$work"
+}
+work=$(mktemp -d)
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM PIPE
+
+# Read one byte past the cap so an oversized upload is refused, not truncated.
+head -c $((max_bytes + 1)) >"$work/release.tar"
+[ "$(stat -c %s "$work/release.tar")" -le "$max_bytes" ] || die "release is over $max_bytes bytes"
+
+mkdir "$work/r"
+tar -x --no-same-owner --no-same-permissions -f "$work/release.tar" -C "$work/r" ||
+  die "release is not a readable tarball"
+
+# Exactly the three entries release.sh writes, and nothing but plain files and
+# directories: a symlink under site/ would let Caddy serve whatever it points
+# at, /etc/ssh-bookshop.env included.
+[ "$(find "$work/r" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | tr '\n' ' ')" = "VERSION site ssh-bookshop " ] ||
+  die "release must hold exactly VERSION, site and ssh-bookshop"
+[ -f "$work/r/ssh-bookshop" ] && [ -d "$work/r/site" ] && [ -f "$work/r/VERSION" ] ||
+  die "release entries have the wrong types"
+[ -z "$(find "$work/r" ! -type f ! -type d -print -quit)" ] ||
+  die "release holds something other than files and directories"
+
+# The upload cap does not bound what gets written: a hard link or a sparse file
+# can expand far past it once it is copied out. Refuse links and cap the
+# apparent size of everything.
+[ -z "$(find "$work/r" -type f -links +1 -print -quit)" ] ||
+  die "release holds hard links"
+[ "$(find "$work/r" -type f -printf '%s\n' | awk '{ s += $1 } END { print s + 0 }')" -le "$max_bytes" ] ||
+  die "release expands past $max_bytes bytes"
+
+version=$(head -c 64 "$work/r/VERSION" | tr -d '\n')
+[[ "$version" =~ ^[0-9a-f]{40}$ ]] || die "VERSION is not a commit hash"
+short=${version:0:12}
+
+# The first run replaces the hand-installed binary and site, a regular file and
+# a directory. Keep them as release "manual" so there is something to roll back
+# to. The site has one moment of not existing here, on this run only.
+if [ -f "$live" ] && [ ! -L "$live" ]; then
+  install -d -m 0755 "$releases/manual"
+  install -m 0755 -o root -g root "$live" "$releases/manual/ssh-bookshop.tmp"
+  mv -f "$releases/manual/ssh-bookshop.tmp" "$releases/manual/ssh-bookshop"
+  point "$releases/manual/ssh-bookshop" "$live"
+  say "kept the hand-installed binary as release manual"
+fi
+if [ -d "$site" ] && [ ! -L "$site" ]; then
+  install -d -m 0755 "$releases/manual"
+  rm -rf "$releases/manual/site"
+  mv -T "$site" "$releases/manual/site"
+  point "$releases/manual/site" "$site"
+  say "kept the hand-installed site as release manual"
+fi
+
+# Caddy serves the site from inside the release, so it has to be able to walk
+# down to it. Nothing here is secret: the env file lives in /etc.
+chmod a+rx "$app"
+install -d -m 0755 "$releases"
+
+previous=$(readlink "$live" || true)
+dest=$releases/$version
+
+# A release that is live is never rewritten: rerunning the live commit reuses
+# it, so the rollback target is always a binary that has already run.
+if [ "$previous" = "$dest/ssh-bookshop" ]; then
+  say "$short is already live; restarting it"
+else
+  install -d -m 0755 "$dest"
+  install -m 0755 -o root -g root "$work/r/ssh-bookshop" "$dest/ssh-bookshop.tmp"
+  mv -f "$dest/ssh-bookshop.tmp" "$dest/ssh-bookshop"
+fi
+
+# Healthy means this process logged the version we installed, Square loaded,
+# and the API answers. All three, so a binary that starts but cannot price the
+# shelf is rolled back rather than left serving browse-only.
+healthy() {
+  local since=$1 want=$2 logs
+  for _ in $(seq 30); do
+    sleep 1
+    logs=$(journalctl -u ssh-bookshop --since "@$since" -o cat 2>/dev/null || true)
+    if grep -q "version=$want" <<<"$logs" &&
+      grep -q "square ready" <<<"$logs" &&
+      curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8080/v1/books; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+if [ -n "$previous" ] && [ "$previous" != "$dest/ssh-bookshop" ]; then
+  guard=$previous
+fi
+point "$dest/ssh-bookshop" "$live"
+since=$(date +%s)
+# A restart that fails outright (a binary that will not exec) rolls back the
+# same as one that starts unhealthy: the guard does it on the way out.
+if ! systemctl restart ssh-bookshop || ! healthy "$since" "$version"; then
+  [ "$previous" != "$dest/ssh-bookshop" ] || die "$short was already live and is not healthy after a restart; nothing in the release changed"
+  [ -n "$guard" ] || die "$short did not come up healthy and there is nothing to roll back to"
+  die "$short did not come up healthy"
+fi
+guard=""
+say "$short is live"
+
+# The site follows the binary, since its docs describe the API now running.
+# Built beside the release and renamed into place, then switched in one
+# rename, so Caddy never serves a half-copied tree. Owned by root; Caddy only
+# reads it.
+served_before=$(readlink "$site" || true)
+if [ "$served_before" != "$dest/site" ]; then
+  rm -rf "$dest/site.tmp"
+  rsync -rt --chmod=D755,F644 "$work/r/site/" "$dest/site.tmp/"
+  rm -rf "$dest/site"
+  mv -T "$dest/site.tmp" "$dest/site"
+  point "$dest/site" "$site"
+fi
+# Through Caddy, the way a visitor gets it, so a permission or path problem
+# shows up here rather than as a 403 on the landing page.
+if ! curl -fsS -o /dev/null --max-time 5 --resolve shop.dungeonbooks.com:443:127.0.0.1 \
+  https://shop.dungeonbooks.com/llms.txt; then
+  [ -n "$served_before" ] && point "$served_before" "$site"
+  die "Caddy cannot serve the new site; the old one is back and the new binary stays live"
+fi
+say "site is live"
+
+# Newest first; never prune what is live or what we would roll back to.
+current=$(dirname "$(readlink "$live")")
+served=$(dirname "$(readlink "$site")")
+# shellcheck disable=SC2012 # release names are commit hashes
+ls -1dt "$releases"/*/ 2>/dev/null | sed 's:/$::' | tail -n +$((keep + 1)) |
+  while read -r old; do
+    [ "$old" = "$current" ] && continue
+    [ "$old" = "$served" ] && continue
+    [ -n "$previous" ] && [ "$old" = "$(dirname "$previous")" ] && continue
+    rm -rf -- "$old"
+  done

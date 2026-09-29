@@ -5,10 +5,14 @@ on:
     branches: [main]
   pull_request:
 
-# A second push to a branch makes the first run pointless.
+# A second push to a pull request makes the first run pointless. Not on main,
+# where cancelling would kill a deploy halfway.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -78,3 +82,58 @@ jobs:
       # Bundles the Worker without uploading it, so a broken import of the
       # llms.txt fails here rather than at deploy time.
       - run: pnpm exec wrangler deploy --dry-run
+
+  # Every push to main that passes the tests goes live. The runner joins the
+  # tailnet as an ephemeral node whose tag can reach only the shop's admin
+  # port, and the key it holds can run only the deploy script, which takes a
+  # release on stdin and rolls itself back if the shop does not come up.
+  # Setup and the secrets are in deploy/README.md.
+  #
+  # The repo is public, so this log is too. The host and its key live in the
+  # production environment's secrets, which Actions masks, and the deploy
+  # script prints only its own status lines.
+  deploy:
+    needs: test
+    # DEPLOY_ENABLED is a repository variable, set once the setup is done, so
+    # main stays green until then.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      # Pinned by commit: this job holds deploy credentials.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      # No cache: the test job writes it, through actions pinned only by tag,
+      # and what is built here goes to production. Modules are still checked
+      # against go.sum.
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: build release
+        run: deploy/release.sh > "$RUNNER_TEMP/release.tar"
+
+      - uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+
+      - name: deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          dir="$RUNNER_TEMP/ssh"
+          mkdir -p "$dir"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$dir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$dir/known_hosts"
+          ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$dir/known_hosts" \
+            -o LogLevel=ERROR "deploy@$DEPLOY_HOST" < "$RUNNER_TEMP/release.tar"
