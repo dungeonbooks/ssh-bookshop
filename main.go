@@ -23,6 +23,10 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
+// version is the commit this binary was built from, stamped in by the release
+// build (-ldflags "-X main.version=<sha>"), so the journal says what is live.
+var version = "dev"
+
 func main() {
 	loadDotEnv(".env")
 
@@ -145,7 +149,7 @@ func main() {
 	}
 
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	log.Info("starting ssh bookshop", "addr", net.JoinHostPort(host, port))
+	log.Info("starting ssh bookshop", "version", version, "addr", net.JoinHostPort(host, port))
 	go func() {
 		if err := s.ListenAndServe(); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
 			log.Error("server error", "err", err)
