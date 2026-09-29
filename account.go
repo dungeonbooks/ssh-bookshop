@@ -55,7 +55,7 @@ func (m model) pgFAQ(w int) string {
 		{"help, i have a question about my order!",
 			"come by the shop and ask at the counter, or email hello@dungeonbooks.com"},
 		{"what is the book club?",
-			"we read one science fiction or fantasy novel a month. we meet at the shop in jersey city to talk about it."},
+			"there are two: one reads a science fiction or fantasy novel a month, the other a horror novel. each meets at the shop in jersey city to talk about it."},
 		{"can i join the book club?",
 			"yes. check dungeonbooks.com for the next meeting. you don't have to finish the book."},
 	}
