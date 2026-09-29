@@ -20,12 +20,36 @@ func TestFeaturedIsNewestPick(t *testing.T) {
 	}
 }
 
-// Newest-first ordering is the whole basis for featured() returning index 0.
-func TestCatalogIsNewestFirst(t *testing.T) {
+// Each club is contiguous and newest first, and the Sci-Fi & Fantasy club
+// leads: featured() returning index 0 depends on all three.
+func TestCatalogIsNewestFirstPerClub(t *testing.T) {
+	if catalog[0].Collection != collBookClub {
+		t.Fatalf("catalog[0] is in %q, want the %q club first", catalog[0].Collection, collBookClub)
+	}
+	seen := map[string]bool{catalog[0].Collection: true}
 	for i := 1; i < len(catalog); i++ {
-		if catalog[i-1].Month <= catalog[i].Month {
-			t.Errorf("catalog[%d] (%s) is not newer than catalog[%d] (%s)",
-				i-1, catalog[i-1].Month, i, catalog[i].Month)
+		prev, cur := catalog[i-1], catalog[i]
+		if cur.Collection != prev.Collection {
+			if seen[cur.Collection] {
+				t.Errorf("catalog[%d] starts %q a second time; keep each club together", i, cur.Collection)
+			}
+			seen[cur.Collection] = true
+			continue
 		}
+		if prev.Month <= cur.Month {
+			t.Errorf("catalog[%d] (%s) is not newer than catalog[%d] (%s) in %q",
+				i-1, prev.Month, i, cur.Month, cur.Collection)
+		}
+	}
+}
+
+// A pick is keyed by ISBN everywhere: Square lookups, the API, checkout.
+func TestCatalogISBNsAreUnique(t *testing.T) {
+	seen := map[string]int{}
+	for i, b := range catalog {
+		if j, ok := seen[b.ISBN]; ok {
+			t.Errorf("catalog[%d] and catalog[%d] share ISBN %s", j, i, b.ISBN)
+		}
+		seen[b.ISBN] = i
 	}
 }

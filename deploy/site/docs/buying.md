@@ -1,8 +1,10 @@
 # How buying works
 
 Dungeon Books is a bookstore at 115 Brunswick St, Jersey City, NJ. The shelf
-here is the monthly science fiction and fantasy book club picks, newest first.
-The current pick is marked featured.
+here lists the picks from our two monthly book clubs, each newest first:
+science fiction and fantasy (`"collection": "book club"`), then horror
+(`"horror book club"`). The
+current science fiction and fantasy pick is marked featured.
 
 ## What can be bought
 

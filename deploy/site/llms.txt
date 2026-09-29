@@ -1,6 +1,6 @@
 # Dungeon Books
 
-> An independent science fiction, fantasy, and RPG bookstore in Jersey City. One shelf: the monthly book club picks. Browse over SSH, buy through a hosted Square checkout that a human pays on. Agents: use the HTTP API or the dungeon CLI below. No account, no auth, no card handling on our side.
+> An independent science fiction, fantasy, and RPG bookstore in Jersey City. One shelf: the picks from our monthly sci-fi and fantasy and horror book clubs. Browse over SSH, buy through a hosted Square checkout that a human pays on. Agents: use the HTTP API or the dungeon CLI below. No account, no auth, no card handling on our side.
 
 ## Buying
 

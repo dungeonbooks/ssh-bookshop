@@ -83,5 +83,6 @@ func (b Book) BuyURL() string {
 
 const (
 	collBookClub = "book club"
+	collHorror   = "horror book club"
 	collFeatured = "featured"
 )

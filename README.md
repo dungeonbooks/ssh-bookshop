@@ -1,7 +1,8 @@
 # dungeonbooks ssh-bookshop
 
-`ssh` in, see what our book club is reading. One shelf: the monthly Sci-Fi &
-Fantasy picks, newest first, with the current month starred. Inspired by
+`ssh` in, see what our book clubs are reading. One shelf: the monthly Sci-Fi &
+Fantasy picks, then the Horror club's, each newest first, with the current Sci-Fi
+& Fantasy pick starred. Inspired by
 [`terminal.shop`](https://www.terminal.shop) (`ssh terminal.shop`).
 
 ## How it works
@@ -20,11 +21,15 @@ Fantasy picks, newest first, with the current month starred. Inspired by
   through this process. A pick we no longer carry links out to
   `https://bookshop.org/a/{AffiliateID}/{isbn}` instead; the affiliate ID
   (`108216`) and URL shape match marty's `BookshopClient.get_buy_url`.
-- **The newest pick is featured.** `featured()` returns the top of the shelf, so
-  the shop opens on it and marks it with a star. Announcing a pick is what makes
+- **The newest pick is featured.** `featured()` returns the top of the shelf,
+  which is the newest Sci-Fi & Fantasy pick, so the shop opens on it and marks
+  it with a star. Announcing a pick is what makes
   it current, and that happens a little before its month starts, so adding it to
   `catalog` features it right away instead of it waiting for the 1st. Ordering
-  the shelf newest-first is therefore load-bearing, not cosmetic.
+  the shelf (Sci-Fi & Fantasy club first, each club newest first) is therefore
+  load-bearing, not cosmetic.
+- **`bookclub.go` is the only hand-edited copy of the picks.** taranat.com
+  builds its shelves from `/v1/books`, using `product_url` for books we carry.
 
 ## Run
 

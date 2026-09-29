@@ -109,8 +109,10 @@ func testShop(t *testing.T) (*apiShop, *stubSquare) {
 	}
 	books := []Book{
 		{ISBN: isbnStocked, BookTitle: "Stocked", Author: "A", Collection: collBookClub, Month: "2026-09",
-			WeightGrams: 500, Cents: 3000, VariationID: "VAR1", Stock: 4, Tracked: true, Sellable: true},
-		{ISBN: isbnGone, BookTitle: "Gone", Author: "B", Collection: collBookClub, Month: "2026-08"},
+			WeightGrams: 500, Cents: 3000, VariationID: "VAR1", Stock: 4, Tracked: true, Sellable: true,
+			URL: "https://www.dungeonbooks.com/product/stocked/ITEM1"},
+		{ISBN: isbnGone, BookTitle: "Gone", Author: "B", Collection: collBookClub, Month: "2026-08",
+			URL: "https://www.dungeonbooks.com/product/gone/ITEM2"},
 	}
 	return newAPIShop(books, st.client(t)), st
 }
@@ -159,12 +161,18 @@ func TestShelfView(t *testing.T) {
 	if _, has := stocked["buy_url"]; has {
 		t.Error("a sellable book must not carry a buy_url: the checkout is how you buy it")
 	}
+	if stocked["product_url"] != "https://www.dungeonbooks.com/product/stocked/ITEM1" {
+		t.Errorf("stocked product_url = %v, want its dungeonbooks.com page", stocked["product_url"])
+	}
 	gone := books[1].(map[string]any)
 	if gone["sellable"] != false || !strings.Contains(gone["buy_url"].(string), "bookshop.org") {
 		t.Errorf("gone = %v", gone)
 	}
 	if _, has := gone["stock"]; has {
 		t.Error("an untracked book must not report a stock count")
+	}
+	if _, has := gone["product_url"]; has {
+		t.Error("a book we don't carry must not link to our page: it has nothing to sell")
 	}
 
 	rec, _ = do(t, h, http.MethodGet, "/v1/books/"+isbnGone, nil)

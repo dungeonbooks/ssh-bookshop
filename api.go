@@ -119,6 +119,8 @@ func (s *apiShop) view(i int) shopapi.Book {
 	// One way to buy each book: checkout while we have it, Bookshop once not.
 	if !b.Sellable {
 		v.BuyURL = b.BuyURL()
+	} else if strings.Contains(b.URL, "dungeonbooks.com") {
+		v.ProductURL = b.URL
 	}
 	return v
 }
