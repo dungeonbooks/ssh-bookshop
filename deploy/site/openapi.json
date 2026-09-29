@@ -101,7 +101,8 @@
           "sellable": {"type": "boolean", "description": "True when it can be checked out here."},
           "tracked": {"type": "boolean", "description": "True when stock is a real count."},
           "stock": {"type": "integer", "description": "Only present when tracked."},
-          "buy_url": {"type": "string", "format": "uri", "description": "Only present when not sellable: where to buy it instead."}
+          "buy_url": {"type": "string", "format": "uri", "description": "Only present when not sellable: where to buy it instead."},
+          "product_url": {"type": "string", "format": "uri", "description": "Only present when sellable: the shop's web page for the book, for a person. Agents check out through the API."}
         }
       },
       "Shelf": {

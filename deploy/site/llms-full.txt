@@ -105,7 +105,9 @@ The shelf.
 ```
 
 `stock` is only present when `tracked` is true. `buy_url` is only present when
-`sellable` is false: there is exactly one way to buy each book. Prices are
+`sellable` is false: there is exactly one way to buy each book. A sellable book
+may carry `product_url`, its page on dungeonbooks.com, for linking a person to
+it; an agent should still check out through the API. Prices are
 re-read from the point of sale on every checkout, so `prices_as_of` moves.
 
 ## GET /v1/books/{isbn}

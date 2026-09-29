@@ -35,7 +35,9 @@ const (
 
 // Book is one shelf entry. Stock is only present when Square keeps a count for
 // the book; BuyURL is only present for a book the shop does not carry, so a
-// reader never sees two ways to buy the same book.
+// reader never sees two ways to buy the same book. ProductURL is the shop's web
+// page for a book it does carry, for a person rather than an agent: an agent
+// checks out through the API.
 type Book struct {
 	ISBN       string `json:"isbn"`
 	Title      string `json:"title"`
@@ -51,6 +53,7 @@ type Book struct {
 	Tracked    bool   `json:"tracked"`
 	Stock      *int   `json:"stock,omitempty"`
 	BuyURL     string `json:"buy_url,omitempty"`
+	ProductURL string `json:"product_url,omitempty"`
 }
 
 // Shelf is the whole shop.
