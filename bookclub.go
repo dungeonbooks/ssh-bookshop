@@ -14,10 +14,11 @@ package main
 // bookshop.org affiliate link once we sell out.
 var catalog = []Book{
 	// Not in the catalog db yet, so the weight is the retail listing's 14.1 oz
-	// rather than Ingram's, and there is no Square product URL to link.
+	// rather than Ingram's.
 	{ISBN: "9781250904966", BookTitle: "The Scarlet Ball", Author: "Nghi Vo", Collection: collBookClub, Month: "2026-11",
 		Format: "hardcover", Pages: 336, WeightGrams: 400,
-		Blurb: "Gilded Age New York, where the old families keep their power by marrying demons. Judith Ban, convent girl turned courtesan turned failed thief, is hired to stand in for a missing debutante through a season that ends at the Scarlet Ball."},
+		Blurb: "Gilded Age New York, where the old families keep their power by marrying demons. Judith Ban, convent girl turned courtesan turned failed thief, is hired to stand in for a missing debutante through a season that ends at the Scarlet Ball.",
+		URL:   "https://www.dungeonbooks.com/product/the-scarlet-ball-by-nghi-vo-hardcover-/ZFPEJR3TJKTEP5MXSDM5DLRF"},
 	{ISBN: "9798893311891", BookTitle: "MAYA: Seed Takes Root", Author: "Anand Gandhi and Zain Memon", Collection: collBookClub, Month: "2026-10",
 		Format: "hardcover", Pages: 416, WeightGrams: 771,
 		Blurb: "A world where the internet grows from trees, and whoever tends them shapes what billions of people want. One boy never logged in.",
