@@ -121,6 +121,10 @@ var catalog = []Book{
 		Blurb: "Laura lives quietly in an Austrian castle until a carriage crashes nearby and leaves behind a beautiful guest. The vampire story that came before Dracula.",
 		URL:   "https://www.dungeonbooks.com/product/carmilla-by-sheridan-le-fanu-paperback-/320"},
 
+	{ISBN: "9780063433083", BookTitle: "Strange Pictures", Author: "Uketsu", Collection: collHorror, Month: "2026-11",
+		Format: "paperback", Pages: 240, WeightGrams: 227,
+		Blurb: "Nine childlike drawings, each hiding a clue: a pregnant woman's blog sketches, a boy's picture of his house, the last thing a murder victim drew. Piece them together and they tell one story. Translated by Jim Rion.",
+		URL:   "https://www.dungeonbooks.com/product/strange-pictures-by-uketsu-paperback-/ZATAUGL33FDCU3A7CJWYMORO"},
 	{ISBN: "9781982136468", BookTitle: "The Only Good Indians", Author: "Stephen Graham Jones", Collection: collHorror, Month: "2026-10",
 		Format: "paperback", Pages: 336, WeightGrams: 281,
 		Blurb: "Ten years after an elk hunt on land they had no right to, four Blackfeet men find something is hunting them back.",
