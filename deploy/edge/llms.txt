@@ -5,7 +5,7 @@
 ## Docs
 
 - [Dungeon Books Docs](https://docs.dungeonbooks.com/llms.txt): hours, location, orders, events, policies, and the agent pages, one summary per page.
-- [Store](https://docs.dungeonbooks.com/store.md): hours, address, phone, email.
+- [Store](https://docs.dungeonbooks.com/store.md): hours, address, phone, contact form.
 - [Buying with an agent](https://docs.dungeonbooks.com/agents/index.md): the book club shelf as an API and a CLI.
 
 ## Agents

@@ -5,7 +5,7 @@
     "version": "1",
     "summary": "The book club shelf and a hosted Square checkout, for agents.",
     "description": "Read the shelf, price an order, choose pickup or shipping, and get a checkout URL for a human to pay on. Payment never passes through this API. No authentication.",
-    "contact": {"email": "hello@dungeonbooks.com"}
+    "contact": {"url": "https://dungeonbooks.com/contact"}
   },
   "servers": [{"url": "https://api.dungeonbooks.com"}],
   "paths": {
