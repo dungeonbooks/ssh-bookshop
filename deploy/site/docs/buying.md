@@ -39,4 +39,4 @@ Poll the order until its state is `paid`. Square emails the receipt. Shipped
 orders leave Jersey City within 3 to 5 business days, with a tracking number
 by email. Pickup orders are set aside at the counter and we email when ready.
 
-Questions about an order: hello@dungeonbooks.com.
+Questions about an order: https://dungeonbooks.com/contact.
